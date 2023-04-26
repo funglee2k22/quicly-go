@@ -10,11 +10,15 @@ type Quicly struct {
 	logger log.Logger
 }
 
-func (q *Quicly) Initialize(options *Options) {
+func (q *Quicly) Initialize(options Options) {
 	log.SetGlobalLevel(log.InfoLevel)
 	log.TimeFieldFormat = time.StampMilli
 
-	q.logger = log.New(os.Stdout).With().Timestamp().Logger()
+	if options.Logger == nil {
+		q.logger = log.New(os.Stdout).With().Timestamp().Logger()
+	} else {
+		q.logger = *options.Logger
+	}
 	q.logger.Info().Msg("Initialized")
 }
 
