@@ -4,6 +4,8 @@ import (
 	log "github.com/rs/zerolog"
 	"os"
 	"time"
+
+	"github.com/Project-Faster/quicly-go/internal/quiclylib"
 )
 
 type Quicly struct {
@@ -19,9 +21,13 @@ func (q *Quicly) Initialize(options Options) {
 	} else {
 		q.logger = *options.Logger
 	}
+
+	quiclylib.InitializeWinDivertEngine()
+
 	q.logger.Info().Msg("Initialized")
 }
 
 func (q *Quicly) Terminate() {
+	quiclylib.CloseWinDivertEngine()
 	q.logger.Info().Msg("Terminated")
 }
