@@ -22,12 +22,12 @@ func (q *Quicly) Initialize(options Options) {
 		q.logger = *options.Logger
 	}
 
-	quiclylib.InitializeWinDivertEngine()
+	quiclylib.InitializeQuiclyEngine()
 
 	q.logger.Info().Msg("Initialized")
 }
 
 func (q *Quicly) Terminate() {
-	quiclylib.CloseWinDivertEngine()
+	quiclylib.CloseQuiclyEngine()
 	q.logger.Info().Msg("Terminated")
 }

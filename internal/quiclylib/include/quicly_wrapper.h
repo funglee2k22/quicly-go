@@ -1,4 +1,7 @@
 
+#ifndef QUICLY_WRAPPER
+#define QUICLY_WRAPPER
+
 #ifdef WIN32
 
 // Including SDKDDKVer.h defines the highest available Windows platform.
@@ -10,11 +13,13 @@
 // Windows Header Files:
 #include <windows.h>
 
+#endif // WIN32
+
 #include "quicly.h"
 
 enum {
   QUICLY_OK = 0,  //!< No issue
-  QUICLY_ERROR_NOTINITILIZED = 1,  //!< InitializeWinDivertEngine was not called previously 
+  QUICLY_ERROR_NOTINITILIZED = 1,  //!< InitializeWinDivertEngine was not called previously
   QUICLY_ERROR_ALREADY_INIT  = 2,  //!< InitializeWinDivertEngine called again before CloseWinDivertEngine
   QUICLY_ERROR_FAILED = 3,         //!< Operation failed
   QUICLY_ERROR_NOT_OPEN = 4,       //!< Connection is not open so no state available
@@ -23,4 +28,4 @@ enum {
 extern int  InitializeQuiclyEngine();
 extern int  CloseQuiclyEngine();
 
-#endif // WIN32
+#endif
