@@ -2,6 +2,7 @@ package quicly
 
 import (
 	log "github.com/rs/zerolog"
+	"net"
 	"os"
 	"time"
 
@@ -30,4 +31,16 @@ func (q *Quicly) Initialize(options Options) {
 func (q *Quicly) Terminate() {
 	quiclylib.CloseQuiclyEngine()
 	q.logger.Info().Msg("Terminated")
+}
+
+func (q *Quicly) Listen(localAddr net.Addr) quiclylib.Connection {
+	conn := &quiclylib.QServerConnection{}
+
+	return conn
+}
+
+func (q *Quicly) Dial(remoteAddr net.Addr) quiclylib.Connection {
+	conn := &quiclylib.QClientConnection{}
+
+	return conn
 }

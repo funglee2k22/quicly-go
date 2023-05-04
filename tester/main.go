@@ -13,7 +13,17 @@ func main() {
 	var l = log.New(os.Stdout).With().Timestamp().Logger()
 	connection.Initialize(quicly.Options{
 		Logger: &l,
+		OnOpen: func() {
+
+		},
+		OnClose: func() {
+
+		},
 	})
+
+	connection.Listen(nil)
+
+	connection.Dial(nil)
 
 	connection.Terminate()
 }
