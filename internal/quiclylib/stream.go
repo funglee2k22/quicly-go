@@ -1,51 +1,91 @@
 package quiclylib
 
 import (
+	"math/rand"
 	"net"
 	"time"
 )
 
 type QStream struct {
+	session Session
+	conn    net.Conn
+
+	id         uint32
+	returnAddr *net.UDPAddr
+
+	buffer []byte
 }
 
-func (Q *QStream) Read(b []byte) (n int, err error) {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) init() {
+	if s.id != 0 {
+		return
+	}
+	s.id = rand.Uint32()
+	s.buffer = make([]byte, 0, 4096)
 }
 
-func (Q *QStream) Write(b []byte) (n int, err error) {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) ID() uint32 {
+	s.init()
+	return s.id
 }
 
-func (Q *QStream) Close() error {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) Read(b []byte) (n int, err error) {
+	s.init()
+	if s.conn == nil {
+		return -1, net.ErrClosed
+	}
+	n, s.returnAddr, err = s.conn.(*net.UDPConn).ReadFromUDP(b)
+	return n, err
 }
 
-func (Q *QStream) LocalAddr() net.Addr {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) Write(b []byte) (n int, err error) {
+	s.init()
+	if s.conn == nil {
+		return -1, net.ErrClosed
+	}
+	if s.returnAddr == nil {
+		return s.conn.Write(b)
+	}
+	return s.conn.(*net.UDPConn).WriteToUDP(b, s.returnAddr)
 }
 
-func (Q *QStream) RemoteAddr() net.Addr {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) Close() error {
+	return nil
 }
 
-func (Q *QStream) SetDeadline(t time.Time) error {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) LocalAddr() net.Addr {
+	if s.conn != nil {
+		return nil
+	}
+	return s.conn.LocalAddr()
 }
 
-func (Q *QStream) SetReadDeadline(t time.Time) error {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) RemoteAddr() net.Addr {
+	if s.conn != nil {
+		return nil
+	}
+	return s.conn.RemoteAddr()
 }
 
-func (Q *QStream) SetWriteDeadline(t time.Time) error {
-	//TODO implement me
-	panic("implement me")
+func (s *QStream) SetDeadline(t time.Time) error {
+	if s.conn != nil {
+		return nil
+	}
+	return s.conn.SetDeadline(t)
+}
+
+func (s *QStream) SetReadDeadline(t time.Time) error {
+	if s.conn != nil {
+		return nil
+	}
+	return s.conn.SetReadDeadline(t)
+}
+
+func (s *QStream) SetWriteDeadline(t time.Time) error {
+	if s.conn != nil {
+		return nil
+	}
+	return s.conn.SetWriteDeadline(t)
 }
 
 var _ net.Conn = &QStream{}

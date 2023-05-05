@@ -9,38 +9,62 @@ import (
 	"github.com/Project-Faster/quicly-go/internal/quiclylib"
 )
 
-type Quicly struct {
-	logger log.Logger
-}
+var logger log.Logger
+var opt Options
 
-func (q *Quicly) Initialize(options Options) {
+func Initialize(options Options) {
 	log.SetGlobalLevel(log.InfoLevel)
 	log.TimeFieldFormat = time.StampMilli
 
 	if options.Logger == nil {
-		q.logger = log.New(os.Stdout).With().Timestamp().Logger()
+		logger = log.New(os.Stdout).With().Timestamp().Logger()
 	} else {
-		q.logger = *options.Logger
+		logger = *options.Logger
 	}
+
+	opt = options
 
 	quiclylib.InitializeQuiclyEngine()
 
-	q.logger.Info().Msg("Initialized")
+	logger.Info().Msg("Initialized")
+
+	if opt.OnOpen != nil {
+		opt.OnOpen()
+	}
 }
 
-func (q *Quicly) Terminate() {
+func Terminate() {
 	quiclylib.CloseQuiclyEngine()
-	q.logger.Info().Msg("Terminated")
+	logger.Info().Msg("Terminated")
+	if opt.OnClose != nil {
+		opt.OnClose()
+	}
 }
 
-func (q *Quicly) Listen(localAddr net.Addr) quiclylib.Connection {
-	conn := &quiclylib.QServerConnection{}
+func Listen(localAddr *net.UDPAddr) quiclylib.Session {
+	udpConn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		logger.Error().Msgf("Could not listen on specified udp address: %v", err)
+		return nil
+	}
+
+	conn := &quiclylib.QServerSession{
+		Conn: udpConn,
+	}
 
 	return conn
 }
 
-func (q *Quicly) Dial(remoteAddr net.Addr) quiclylib.Connection {
-	conn := &quiclylib.QClientConnection{}
+func Dial(remoteAddr *net.UDPAddr) quiclylib.Session {
+	udpConn, err := net.DialUDP("udp", nil, remoteAddr)
+	if err != nil {
+		logger.Error().Msgf("Could not dial the specified udp address: %v", err)
+		return nil
+	}
+
+	conn := &quiclylib.QClientSession{
+		Conn: udpConn,
+	}
 
 	return conn
 }

@@ -4,16 +4,20 @@ import (
 	"net"
 )
 
-type Connection interface {
+type Session interface {
 	net.Listener
 
 	OpenStream() Stream
+
+	ID() uint32
 }
 
-var _ Connection = &QServerConnection{}
+var _ Session = &QServerSession{}
 
 type Stream interface {
 	net.Conn
+
+	ID() uint32
 }
 
 var _ Stream = &QStream{}

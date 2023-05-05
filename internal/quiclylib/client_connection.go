@@ -2,26 +2,35 @@ package quiclylib
 
 import "net"
 
-type QClientConnection struct {
+type QClientSession struct {
+	id uint32
+
+	Conn *net.UDPConn
 }
 
-func (Q *QClientConnection) Accept() (net.Conn, error) {
-	//TODO implement me
-	panic("implement me")
+func (s *QClientSession) ID() uint32 {
+	return s.id
 }
 
-func (Q *QClientConnection) Close() error {
-	//TODO implement me
-	panic("implement me")
+func (s *QClientSession) Accept() (net.Conn, error) {
+	return nil, net.ErrClosed
 }
 
-func (Q *QClientConnection) Addr() net.Addr {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (Q *QClientConnection) OpenStream() Stream {
+func (s *QClientSession) Close() error {
 	return nil
 }
 
-var _ net.Listener = &QClientConnection{}
+func (s *QClientSession) Addr() net.Addr {
+	return nil
+}
+
+func (s *QClientSession) OpenStream() Stream {
+	st := &QStream{
+		session: s,
+		conn:    s.Conn,
+	}
+
+	return st
+}
+
+var _ net.Listener = &QClientSession{}
