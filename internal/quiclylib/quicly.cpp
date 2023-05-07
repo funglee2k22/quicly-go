@@ -8,6 +8,17 @@ extern "C" {
     #include "stdlib.h"
 }
 
+/**
+ * the QUIC context
+ */
+static quicly_context_t ctx;
+/**
+ * CID seed
+ */
+static quicly_cid_plaintext_t next_cid;
+
+// ----- Startup ----- //
+
 int InitializeQuiclyEngine() {
 #ifdef WIN32
   printf("starting\n");
@@ -20,10 +31,28 @@ int InitializeQuiclyEngine() {
   }
 #endif
 
+  ptls_openssl_sign_certificate_t sign_certificate;
+  ptls_context_t tlsctx = {
+    .random_bytes = ptls_openssl_random_bytes,
+    .get_time = &ptls_get_time,
+    .key_exchanges = ptls_openssl_key_exchanges,
+    .cipher_suites = ptls_openssl_cipher_suites,
+  };
+  quicly_stream_open_t stream_open = {};
+
+//  /* setup quic context */
+  ctx = quicly_spec_context;
+  ctx.tls = &tlsctx;
+  quicly_amend_ptls_context(ctx.tls);
+  ctx.stream_open = &stream_open;
+
+
   return QUICLY_OK;
 }
 
 int CloseQuiclyEngine() {
+
+
 #ifdef WIN32
   printf("closing\n");
   WSACleanup();
@@ -31,5 +60,12 @@ int CloseQuiclyEngine() {
 
   return QUICLY_OK;
 }
+
+// ----- Connection ----- //
+
+
+// ----- Stream ----- //
+
+
 
 #endif
