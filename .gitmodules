@@ -2,3 +2,7 @@
 	path = deps/quicly
 	url = https://github.com/Project-Faster/quicly.git
 	branch = windows-support
+[submodule "deps/openssl"]
+	path = deps/openssl
+	url = https://github.com/janbar/openssl-cmake.git
+	branch = main
