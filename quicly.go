@@ -12,7 +12,7 @@ import (
 var logger log.Logger
 var opt Options
 
-func Initialize(options Options) {
+func Initialize(options Options) int {
 	log.SetGlobalLevel(log.InfoLevel)
 	log.TimeFieldFormat = time.StampMilli
 
@@ -24,13 +24,18 @@ func Initialize(options Options) {
 
 	opt = options
 
-	quiclylib.InitializeQuiclyEngine()
+	result := quiclylib.InitializeQuiclyEngine()
+	if result != quiclylib.QUICLY_OK {
+		logger.Error().Msgf("Failed initialization: %v", result)
+		return result
+	}
 
 	logger.Info().Msg("Initialized")
 
 	if opt.OnOpen != nil {
 		opt.OnOpen()
 	}
+	return quiclylib.QUICLY_OK
 }
 
 func Terminate() {

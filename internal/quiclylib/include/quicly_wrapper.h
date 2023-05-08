@@ -18,6 +18,8 @@
 #include "quicly.h"
 #include "quicly/defaults.h"
 #include "picotls/openssl.h"
+#include "openssl/pem.h"
+#include "openssl/err.h"
 
 enum {
   QUICLY_OK = 0,  //!< No issue

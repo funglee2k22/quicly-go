@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Project-Faster/quicly-go"
+	"github.com/Project-Faster/quicly-go/internal/quiclylib"
 	log "github.com/rs/zerolog"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -24,7 +27,7 @@ func main() {
 
 	flag.Parse()
 
-	quicly.Initialize(quicly.Options{
+	result := quicly.Initialize(quicly.Options{
 		Logger: &logger,
 		OnOpen: func() {
 			logger.Print("OnStart")
@@ -33,6 +36,10 @@ func main() {
 			logger.Print("OnClose")
 		},
 	})
+	if result != quiclylib.QUICLY_OK {
+		logger.Error().Msgf("Failed initialization: %v", result)
+		os.Exit(1)
+	}
 
 	ip, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", *remoteHost, *remotePort))
 	if err != nil {
@@ -46,9 +53,11 @@ func main() {
 		go runAsServer(ip)
 	}
 
-	logger.Print("Begin wait 30sec...")
-	<-time.After(30 * time.Second)
-	logger.Print("Wait end")
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	<-c
+
+	logger.Info().Msg("Received termination signal")
 
 	quicly.Terminate()
 	logger.Print("finish")

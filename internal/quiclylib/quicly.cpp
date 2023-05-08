@@ -8,6 +8,9 @@ extern "C" {
     #include "stdlib.h"
 }
 
+#define SERVER_CERT  "server_cert.pem"
+#define SERVER_KEY   "server_key.pem"
+
 /**
  * the QUIC context
  */
@@ -46,6 +49,28 @@ int InitializeQuiclyEngine() {
   quicly_amend_ptls_context(ctx.tls);
   ctx.stream_open = &stream_open;
 
+  // load certificate
+  int ret;
+  if ((ret = ptls_load_certificates(&tlsctx, SERVER_CERT)) != 0) {
+      fprintf(stderr, "failed to load certificates from file[%d]: %s\n", ret, ERR_error_string(ret, NULL));
+      return QUICLY_ERROR_FAILED;
+  }
+
+  // load private key and associate it to the certificate
+  FILE *fp;
+  if ((fp = fopen(SERVER_KEY, "r")) == NULL) {
+      fprintf(stderr, "failed to open file:%s:%s\n", SERVER_KEY, strerror(errno));
+      exit(1);
+  }
+  EVP_PKEY *pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+  fclose(fp);
+  if (pkey == NULL) {
+      fprintf(stderr, "failed to load private key from file:%s\n", SERVER_KEY);
+      exit(1);
+  }
+  ptls_openssl_init_sign_certificate(&sign_certificate, pkey);
+  EVP_PKEY_free(pkey);
+  tlsctx.sign_certificate = &sign_certificate.super;
 
   return QUICLY_OK;
 }
