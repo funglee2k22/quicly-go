@@ -24,7 +24,7 @@ func Initialize(options Options) int {
 
 	opt = options
 
-	result := quiclylib.InitializeQuiclyEngine()
+	result := quiclylib.QuiclyInitializeEngine()
 	if result != quiclylib.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
 		return result
@@ -39,7 +39,7 @@ func Initialize(options Options) int {
 }
 
 func Terminate() {
-	quiclylib.CloseQuiclyEngine()
+	quiclylib.QuiclyCloseEngine()
 	logger.Info().Msg("Terminated")
 	if opt.OnClose != nil {
 		opt.OnClose()

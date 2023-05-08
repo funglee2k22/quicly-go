@@ -20,9 +20,13 @@ static quicly_context_t ctx;
  */
 static quicly_cid_plaintext_t next_cid;
 
+static unsigned int current_max_conn = 0;
+
+static quicly_conn_t *conns_table[256] = {};
+
 // ----- Startup ----- //
 
-int InitializeQuiclyEngine() {
+int QuiclyInitializeEngine() {
 #ifdef WIN32
   printf("starting\n");
   WSADATA wsaData;
@@ -72,12 +76,15 @@ int InitializeQuiclyEngine() {
   EVP_PKEY_free(pkey);
   tlsctx.sign_certificate = &sign_certificate.super;
 
+  // check consistency
+  if ((tlsctx.certificates.count != 0) != (tlsctx.sign_certificate != NULL)) {
+    return QUICLY_ERROR_FAILED;
+  }
+
   return QUICLY_OK;
 }
 
-int CloseQuiclyEngine() {
-
-
+int QuiclyCloseEngine() {
 #ifdef WIN32
   printf("closing\n");
   WSACleanup();
@@ -87,6 +94,44 @@ int CloseQuiclyEngine() {
 }
 
 // ----- Connection ----- //
+int QuiclyProcessMsg(int is_client, unsigned short family, unsigned short port, void* _addr, void* _msg, size_t dgram_len)
+{
+    size_t off = 0, i = 0;
+
+    char* addr = (char*)_addr;
+    char* msg  = (char*)_msg;
+
+    struct in_addr byteAddr;
+    byteAddr.s_addr = inet_addr(addr);
+
+    struct sockaddr_in address{
+      .sin_family = family,
+      .sin_port = htons(port),
+      .sin_addr = byteAddr
+    };
+
+    /* split UDP datagram into multiple QUIC packets */
+    while (off < dgram_len) {
+        quicly_decoded_packet_t decoded;
+        if (quicly_decode_packet(&ctx, &decoded, (const uint8_t *)msg, dgram_len, &off) == SIZE_MAX)
+            return QUICLY_ERROR_FAILED;
+
+        /* find the corresponding connection */
+        for (i = 0; i < 256 && conns_table[i] != NULL; ++i)
+            if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, &decoded))
+                break;
+        if (conns_table[i] != NULL) {
+            /* let the current connection handle ingress packets */
+            quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, &decoded);
+        } else if (!is_client) {
+            /* assume that the packet is a new connection */
+            quicly_accept(conns_table + i, &ctx, NULL, (struct sockaddr*)&address, &decoded, NULL, &next_cid, NULL, NULL);
+        }
+    }
+
+    return QUICLY_OK;
+}
+
 
 
 // ----- Stream ----- //

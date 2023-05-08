@@ -29,7 +29,9 @@ enum {
   QUICLY_ERROR_NOT_OPEN = 4,       //!< Connection is not open so no state available
 };
 
-extern int  InitializeQuiclyEngine();
-extern int  CloseQuiclyEngine();
+extern int  QuiclyInitializeEngine();
+extern int  QuiclyCloseEngine();
+extern int  QuiclyProcessMsg(int is_client, unsigned short sa_family, unsigned short port, void* addr, void* msg, size_t dgram_len);
+
 
 #endif
