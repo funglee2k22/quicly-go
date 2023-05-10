@@ -1,15 +1,13 @@
 package quiclylib
 
-import "net"
+import (
+	"context"
+	"net"
+)
 
 type QClientSession struct {
-	id uint32
-
 	Conn *net.UDPConn
-}
-
-func (s *QClientSession) ID() uint32 {
-	return s.id
+	Ctx  context.Context
 }
 
 func (s *QClientSession) Accept() (net.Conn, error) {

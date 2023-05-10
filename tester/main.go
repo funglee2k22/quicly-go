@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"github.com/Project-Faster/quicly-go"
@@ -47,10 +48,12 @@ func main() {
 		return
 	}
 
+	ctx := context.Background()
+
 	if *clientFlag {
-		go runAsClient(ip)
+		go runAsClient(ip, ctx)
 	} else {
-		go runAsServer(ip)
+		go runAsServer(ip, ctx)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -63,8 +66,8 @@ func main() {
 	logger.Print("finish")
 }
 
-func runAsClient(ip *net.UDPAddr) {
-	c := quicly.Dial(ip)
+func runAsClient(ip *net.UDPAddr, ctx context.Context) {
+	c := quicly.Dial(ip, ctx)
 	defer func() {
 		c.Close()
 	}()
@@ -79,8 +82,8 @@ func runAsClient(ip *net.UDPAddr) {
 	}
 }
 
-func runAsServer(ip *net.UDPAddr) {
-	c := quicly.Listen(ip)
+func runAsServer(ip *net.UDPAddr, ctx context.Context) {
+	c := quicly.Listen(ip, ctx)
 
 	for {
 		<-time.After(100 * time.Millisecond)

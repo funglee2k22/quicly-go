@@ -1,7 +1,6 @@
 package quiclylib
 
 import (
-	"math/rand"
 	"net"
 	"time"
 )
@@ -10,23 +9,16 @@ type QStream struct {
 	session Session
 	conn    net.Conn
 
-	id         uint32
 	returnAddr *net.UDPAddr
 
 	buffer []byte
 }
 
 func (s *QStream) init() {
-	if s.id != 0 {
+	if s.buffer != nil {
 		return
 	}
-	s.id = rand.Uint32()
 	s.buffer = make([]byte, 0, 4096)
-}
-
-func (s *QStream) ID() uint32 {
-	s.init()
-	return s.id
 }
 
 func (s *QStream) Read(b []byte) (n int, err error) {

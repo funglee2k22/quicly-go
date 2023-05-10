@@ -29,9 +29,16 @@ enum {
   QUICLY_ERROR_NOT_OPEN = 4,       //!< Connection is not open so no state available
 };
 
+typedef struct iovec packetbuff;
+
 extern int  QuiclyInitializeEngine();
 extern int  QuiclyCloseEngine();
-extern int  QuiclyProcessMsg(int is_client, unsigned short sa_family, unsigned short port, void* addr, void* msg, size_t dgram_len);
+extern int  QuiclyProcessMsg( int is_client, unsigned short sa_family, unsigned short port,
+                              void* addr, void* msg, size_t dgram_len, unsigned long long* id);
 
+extern int  QuiclySendMsg( unsigned long long id, packetbuff* dgrams, unsigned long long* num_dgrams );
+
+extern int CopyPacket( packetbuff* dgram, void* dst, unsigned long long* dst_size );
+extern int GetPacketLen( packetbuff* dgram, unsigned long long* dst_size );
 
 #endif

@@ -1,6 +1,7 @@
 package quicly
 
 import (
+	"context"
 	log "github.com/rs/zerolog"
 	"net"
 	"os"
@@ -46,7 +47,7 @@ func Terminate() {
 	}
 }
 
-func Listen(localAddr *net.UDPAddr) quiclylib.Session {
+func Listen(localAddr *net.UDPAddr, ctx context.Context) quiclylib.Session {
 	udpConn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
 		logger.Error().Msgf("Could not listen on specified udp address: %v", err)
@@ -55,12 +56,13 @@ func Listen(localAddr *net.UDPAddr) quiclylib.Session {
 
 	conn := &quiclylib.QServerSession{
 		Conn: udpConn,
+		Ctx:  ctx,
 	}
 
 	return conn
 }
 
-func Dial(remoteAddr *net.UDPAddr) quiclylib.Session {
+func Dial(remoteAddr *net.UDPAddr, ctx context.Context) quiclylib.Session {
 	udpConn, err := net.DialUDP("udp", nil, remoteAddr)
 	if err != nil {
 		logger.Error().Msgf("Could not dial the specified udp address: %v", err)
@@ -69,6 +71,7 @@ func Dial(remoteAddr *net.UDPAddr) quiclylib.Session {
 
 	conn := &quiclylib.QClientSession{
 		Conn: udpConn,
+		Ctx:  ctx,
 	}
 
 	return conn

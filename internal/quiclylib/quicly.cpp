@@ -20,8 +20,6 @@ static quicly_context_t ctx;
  */
 static quicly_cid_plaintext_t next_cid;
 
-static unsigned int current_max_conn = 0;
-
 static quicly_conn_t *conns_table[256] = {};
 
 // ----- Startup ----- //
@@ -94,7 +92,8 @@ int QuiclyCloseEngine() {
 }
 
 // ----- Connection ----- //
-int QuiclyProcessMsg(int is_client, unsigned short family, unsigned short port, void* _addr, void* _msg, size_t dgram_len)
+int QuiclyProcessMsg( int is_client, unsigned short family, unsigned short port,
+                      void* _addr, void* _msg, size_t dgram_len, unsigned long long* id)
 {
     size_t off = 0, i = 0;
 
@@ -124,6 +123,9 @@ int QuiclyProcessMsg(int is_client, unsigned short family, unsigned short port, 
             /* let the current connection handle ingress packets */
             quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, &decoded);
         } else if (!is_client) {
+            if( id != NULL ) {
+              *id = i;
+            }
             /* assume that the packet is a new connection */
             quicly_accept(conns_table + i, &ctx, NULL, (struct sockaddr*)&address, &decoded, NULL, &next_cid, NULL, NULL);
         }
@@ -132,7 +134,50 @@ int QuiclyProcessMsg(int is_client, unsigned short family, unsigned short port, 
     return QUICLY_OK;
 }
 
+int QuiclySendMsg( unsigned long long id, packetbuff* dgrams, unsigned long long* num_dgrams )
+{
+    quicly_address_t dest, src;
+    uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx.transport_params.max_udp_payload_size];
 
+    int ret = quicly_send(conns_table[id], &dest, &src, dgrams, num_dgrams, dgrams_buf, sizeof(dgrams_buf));
+    switch (ret) {
+//    case 0: {
+//        size_t j;
+//        for (j = 0; j != *num_dgrams; ++j) {
+//            //send_one(fd, &dest.sa, &dgrams[j]);
+//        }
+//    } break;
+    case QUICLY_ERROR_FREE_CONNECTION:
+        /* connection has been closed, free, and exit when running as a client */
+        quicly_free(conns_table[id]);
+        conns_table[id] = NULL;
+        break;
+    default:
+        fprintf(stderr, "quicly_send returned %d\n", ret);
+        return QUICLY_ERROR_FAILED;
+    }
+
+    return QUICLY_OK;
+}
+
+int CopyPacket( packetbuff* dgram, void* dst, unsigned long long* dst_size )
+{
+    if( dgram == NULL || dst == NULL || dst_size == NULL )
+        return QUICLY_ERROR_FAILED;
+
+    if( dgram->iov_len > *dst_size )
+        return QUICLY_ERROR_FAILED;
+
+    char* dst_ptr = (char*)dst;
+    memcpy( dst, dgram->iov_base, dgram->iov_len );
+    *dst_size = dgram->iov_len;
+
+    return QUICLY_OK;
+}
+
+int GetPacketLen( packetbuff* dgram, unsigned long long* dst_size )
+{
+}
 
 // ----- Stream ----- //
 
