@@ -112,22 +112,36 @@ int QuiclyProcessMsg( int is_client, unsigned short family, unsigned short port,
     /* split UDP datagram into multiple QUIC packets */
     while (off < dgram_len) {
         quicly_decoded_packet_t decoded;
+    printf("%s@%d\n", __FILE__, __LINE__ );
         if (quicly_decode_packet(&ctx, &decoded, (const uint8_t *)msg, dgram_len, &off) == SIZE_MAX)
             return QUICLY_ERROR_FAILED;
+    printf("%s@%d\n", __FILE__, __LINE__ );
+
 
         /* find the corresponding connection */
         for (i = 0; i < 256 && conns_table[i] != NULL; ++i)
-            if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, &decoded))
+            if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, &decoded)) {
+    printf("%s@%d\n", __FILE__, __LINE__ );
                 break;
+            }
+        int ret = 0;
         if (conns_table[i] != NULL) {
+    printf("%s@%d\n", __FILE__, __LINE__ );
             /* let the current connection handle ingress packets */
-            quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, &decoded);
+            ret = quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, &decoded);
         } else if (!is_client) {
             if( id != NULL ) {
+    printf("%s@%d\n", __FILE__, __LINE__ );
               *id = i;
             }
+    printf("%s@%d\n", __FILE__, __LINE__ );
             /* assume that the packet is a new connection */
-            quicly_accept(conns_table + i, &ctx, NULL, (struct sockaddr*)&address, &decoded, NULL, &next_cid, NULL, NULL);
+            quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, &decoded, NULL, &next_cid, NULL, NULL);
+    printf("%s@%d, %d %p == %p\n", __FILE__, __LINE__, ret, *(conns_table + *id), conns_table[*id] );
+        }
+        if( ret != 0 ) {
+          *id = -1;
+          return ret;
         }
     }
 
@@ -139,8 +153,14 @@ int QuiclySendMsg( unsigned long long id, packetbuff* dgrams, unsigned long long
     quicly_address_t dest, src;
     uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx.transport_params.max_udp_payload_size];
 
+    printf("%s@%d\n", __FILE__, __LINE__ );
     int ret = quicly_send(conns_table[id], &dest, &src, dgrams, num_dgrams, dgrams_buf, sizeof(dgrams_buf));
+    printf("%s@%d\n", __FILE__, __LINE__ );
+
+
     switch (ret) {
+    case 0:
+      break;
 //    case 0: {
 //        size_t j;
 //        for (j = 0; j != *num_dgrams; ++j) {
@@ -149,14 +169,17 @@ int QuiclySendMsg( unsigned long long id, packetbuff* dgrams, unsigned long long
 //    } break;
     case QUICLY_ERROR_FREE_CONNECTION:
         /* connection has been closed, free, and exit when running as a client */
+    printf("%s@%d\n", __FILE__, __LINE__ );
         quicly_free(conns_table[id]);
         conns_table[id] = NULL;
         break;
     default:
         fprintf(stderr, "quicly_send returned %d\n", ret);
+    printf("%s@%d\n", __FILE__, __LINE__ );
         return QUICLY_ERROR_FAILED;
     }
 
+    printf("%s@%d\n", __FILE__, __LINE__ );
     return QUICLY_OK;
 }
 
@@ -165,18 +188,33 @@ int CopyPacket( packetbuff* dgram, void* dst, unsigned long long* dst_size )
     if( dgram == NULL || dst == NULL || dst_size == NULL )
         return QUICLY_ERROR_FAILED;
 
+    printf("%s@%d\n", __FILE__, __LINE__ );
     if( dgram->iov_len > *dst_size )
         return QUICLY_ERROR_FAILED;
 
+    printf("%s@%d\n", __FILE__, __LINE__ );
     char* dst_ptr = (char*)dst;
+    printf("%s@%d\n", __FILE__, __LINE__ );
     memcpy( dst, dgram->iov_base, dgram->iov_len );
+    printf("%s@%d\n", __FILE__, __LINE__ );
     *dst_size = dgram->iov_len;
+    printf("%s@%d\n", __FILE__, __LINE__ );
 
     return QUICLY_OK;
 }
 
 int GetPacketLen( packetbuff* dgram, unsigned long long* dst_size )
 {
+  if( dgram == NULL || dst_size == NULL ) {
+    printf("%s@%d\n", __FILE__, __LINE__ );
+    return QUICLY_ERROR_FAILED;
+  }
+
+    printf("%s@%d\n", __FILE__, __LINE__ );
+  *dst_size = dgram->iov_len;
+
+    printf("%s@%d\n", __FILE__, __LINE__ );
+  return QUICLY_OK;
 }
 
 // ----- Stream ----- //

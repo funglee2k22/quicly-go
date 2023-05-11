@@ -11,7 +11,8 @@ type QServerSession struct {
 	Conn *net.UDPConn
 	Ctx  context.Context
 
-	id uint64
+	id      uint64
+	started bool
 
 	outgoingQueue [][]byte
 	outLock       sync.Mutex
@@ -75,7 +76,17 @@ func (s *QServerSession) connectionOutHandler() {
 	}
 }
 
+func (s *QServerSession) start() {
+	if s.started {
+		return
+	}
+	go s.connectionInHandler()
+	go s.connectionOutHandler()
+}
+
 func (s *QServerSession) Accept() (net.Conn, error) {
+	s.start()
+
 	st := &QStream{
 		session: s,
 		conn:    s.Conn,
