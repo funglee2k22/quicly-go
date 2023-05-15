@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Project-Faster/quicly-go"
-	"github.com/Project-Faster/quicly-go/internal/quiclylib"
+	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	log "github.com/rs/zerolog"
 	"net"
 	"os"
@@ -37,7 +37,7 @@ func main() {
 			logger.Print("OnClose")
 		},
 	})
-	if result != quiclylib.QUICLY_OK {
+	if result != errors.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
 		os.Exit(1)
 	}
@@ -103,16 +103,16 @@ func handleServerStream(stream net.Conn) {
 	data := make([]byte, 4096)
 	for {
 		n, err := stream.Read(data)
-		logger.Info().Msgf("Read: %n, %v\n", n, err)
+		//logger.Info().Msgf("Read: %n, %v\n", n, err)
 		if err != nil {
 			logger.Err(err).Send()
 			return
 		}
 
-		logger.Info().Msgf("received: %v\n", string(data[:n]))
+		//logger.Info().Msgf("received: %v\n", string(data[:n]))
 
 		n, err = stream.Write(data[:n])
-		logger.Info().Msgf("Write: %n, %v\n", n, err)
+		//logger.Info().Msgf("Write: %n, %v\n", n, err)
 		if err != nil {
 			logger.Err(err).Send()
 			return

@@ -1,13 +1,14 @@
 package quicly
 
 import (
+	"github.com/Project-Faster/quicly-go/quiclylib"
+	"github.com/Project-Faster/quicly-go/quiclylib/errors"
+
 	"context"
 	log "github.com/rs/zerolog"
 	"net"
 	"os"
 	"time"
-
-	"github.com/Project-Faster/quicly-go/internal/quiclylib"
 )
 
 var logger log.Logger
@@ -26,7 +27,7 @@ func Initialize(options Options) int {
 	opt = options
 
 	result := quiclylib.QuiclyInitializeEngine()
-	if result != quiclylib.QUICLY_OK {
+	if result != errors.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
 		return result
 	}
@@ -36,7 +37,7 @@ func Initialize(options Options) int {
 	if opt.OnOpen != nil {
 		opt.OnOpen()
 	}
-	return quiclylib.QUICLY_OK
+	return errors.QUICLY_OK
 }
 
 func Terminate() {

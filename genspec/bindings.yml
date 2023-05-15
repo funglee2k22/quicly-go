@@ -1,0 +1,50 @@
+GENERATOR:
+  PackageName: bindings
+  PackageDescription: "quicly-bindings"
+  PackageLicense: "None"
+  Includes: [ "quicly.h", "quicly_wrapper.h", "quicly/streambuf.h" ]
+  Options:
+    SafeStrings: true
+    ConstCharIsString: true
+  FlagGroups:
+    - { name: LDFLAGS, flags: [
+      "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/lib/libquicly.a",
+      "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/lib/libcrypto.a",
+      "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/lib/libssl.a",
+      "-lm",
+      "-lmswsock",
+      "-lws2_32" ] }
+    - { name: CPPFLAGS, flags: [
+      "-IC:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/"
+    ] }
+
+PARSER:
+  Defines:
+    WIN32: 1
+    _WIN32_WINNT: 0x0A00
+    _WINDOWS: 1
+    WIN32_LEAN_AND_MEAN: 1
+  IncludePaths: [
+    "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/" ]
+  SourcesPaths: [
+    "quicly.h",
+    "quicly_wrapper.h",
+  ]
+
+TRANSLATOR:
+  ConstCharIsString: true
+  ConstUCharIsString: false
+  ConstRules:
+    defines: eval
+  Rules:
+    global:
+      - { action: accept, from: "^iovec" }
+      - { action: accept, from: "^size_t$" }
+      - { action: accept, from: "^QUICLY_OK|QUICLY_ERROR_" }
+      - { action: accept, from: "Quicly" }
+      - { transform: export }
+  PtrTips:
+    function:
+      - { target: QuiclyClientProcessMsg, tips: [ 0,0,0,ref ] }
+      - { target: QuiclyServerProcessMsg, tips: [ 0,0,0,ref,ref ] }
+      - { target: QuiclySendMsg, tips: [ 0,0,ref ] }

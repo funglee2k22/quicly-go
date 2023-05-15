@@ -1,0 +1,29 @@
+GENERATOR:
+  PackageName: errors
+  PackageDescription: "quicly-errors"
+  PackageLicense: "None"
+  Includes: [ "quicly_wrapper.h" ]
+  FlagGroups:
+    - { name: CPPFLAGS, flags: [
+      "-IC:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/"
+    ] }
+
+PARSER:
+  Defines:
+    WIN32: 1
+    _WIN32_WINNT: 0x0A00
+    _WINDOWS: 1
+    WIN32_LEAN_AND_MEAN: 1
+  IncludePaths: [
+    "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/" ]
+  SourcesPaths: [
+    "quicly_wrapper.h",
+  ]
+
+TRANSLATOR:
+  ConstRules:
+    defines: eval
+  Rules:
+    global:
+      - { action: accept, from: "^QUICLY_" }
+      - { transform: export }
