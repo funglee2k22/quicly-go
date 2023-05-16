@@ -5,6 +5,7 @@
 #include "stdio.h"
 #include "stdarg.h"
 #include "stdlib.h"
+#include "stdint.h"
 
 enum {
   QUICLY_OK = 0,  //!< No issue
@@ -22,5 +23,7 @@ extern int  QuiclyClientProcessMsg( const char* address, int port, char* msg, si
 extern int  QuiclyServerProcessMsg( const char* address, int port, char* msg, size_t dgram_len, size_t* newconn_id );
 
 extern int  QuiclySendMsg( size_t id, struct iovec* dgram, size_t* num_dgrams );
+
+void  goquicly_on_stream_open(uint64_t conn_id, uint64_t stream_id);
 
 #endif

@@ -73,8 +73,6 @@ int QuiclyInitializeEngine() {
   quicly_amend_ptls_context(ctx.tls);
   ctx.stream_open = &stream_open;
 
-  printf( "open: %p %p\n", ctx.stream_open, ctx.stream_open->cb );
-
   // load certificate
   int ret;
   if ((ret = ptls_load_certificates(&tlsctx, SERVER_CERT)) != 0) {
@@ -135,6 +133,11 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
         return ret;
     printf("echo.c@%d\n", __LINE__ );
     stream->callbacks = &stream_callbacks;
+
+    const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
+
+    goquicly_on_stream_open( uint64_t(cid->master_id), uint64_t(stream->stream_id) );
+
     return 0;
 }
 
