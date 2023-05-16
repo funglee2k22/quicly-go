@@ -2,12 +2,14 @@ package quiclylib
 
 import (
 	"context"
+	log "github.com/rs/zerolog"
 	"net"
 )
 
 type QClientSession struct {
-	Conn *net.UDPConn
-	Ctx  context.Context
+	Conn   *net.UDPConn
+	Ctx    context.Context
+	Logger log.Logger
 }
 
 func (s *QClientSession) Accept() (net.Conn, error) {
