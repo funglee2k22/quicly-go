@@ -227,7 +227,7 @@ int QuiclyServerProcessMsg( const char* _address, int port, char* msg, size_t dg
             return QUICLY_ERROR_FAILED;
 
         /* find the corresponding connection */
-        for (i = 1; i < 256 && conns_table[i] != NULL; ++i)
+        for (i = 0; i < 256 && conns_table[i] != NULL; ++i)
             if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, &decoded)) {
                 break;
             }
@@ -256,20 +256,21 @@ int QuiclyServerProcessMsg( const char* _address, int port, char* msg, size_t dg
 int QuiclySendMsg( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
 {
     quicly_address_t dest, src;
-    uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams_out) * ctx.transport_params.max_udp_payload_size];
+    uint8_t dgrams_buf[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
 
     int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, sizeof(dgrams_buf));
 
 
     switch (ret) {
-    case 0:
-      break;
-//    case 0: {
-//        size_t j;
-//        for (j = 0; j != *num_dgrams; ++j) {
-//            //send_one(fd, &dest.sa, &dgrams[j]);
-//        }
-//    } break;
+//    case 0:
+//      break;
+      case 0: {
+          size_t j;
+          for (j = 0; j != *num_dgrams; ++j) {
+              //send_one(fd, &dest.sa, &dgrams[j]);
+              printf("packet %p %d\n", dgrams_out[j].iov_base, dgrams_out[j].iov_len);
+          }
+      } break;
     case QUICLY_ERROR_FREE_CONNECTION:
         /* connection has been closed, free, and exit when running as a client */
         quicly_free(conns_table[id]);

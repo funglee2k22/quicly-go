@@ -7,11 +7,14 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	log "github.com/rs/zerolog"
 )
 
 type QServerSession struct {
-	Conn *net.UDPConn
-	Ctx  context.Context
+	Conn   *net.UDPConn
+	Ctx    context.Context
+	Logger log.Logger
 
 	id      uint64
 	started bool
@@ -43,6 +46,7 @@ func (s *QServerSession) connectionInHandler() {
 		}
 
 		s.inLock.Lock()
+		s.Logger.Info().Msgf("IN packet from %v", addr.String())
 		s.incomingQueue = append(s.incomingQueue, packet{
 			data:    buff[:n],
 			dataLen: n,
@@ -75,8 +79,10 @@ func (s *QServerSession) connectionProcessHandler() {
 
 		pkt := s.incomingQueue[0]
 		s.incomingQueue = s.incomingQueue[1:]
+		s.Logger.Info().Msgf("PROCESS packet from %v", pkt.addr.String())
 		s.outLock.Unlock()
 
+		returnAddr := pkt.addr
 		addr, port := pkt.Address()
 
 		var ptr_id bindings.Size_t = 0
@@ -87,7 +93,8 @@ func (s *QServerSession) connectionProcessHandler() {
 
 		s.id = uint64(ptr_id)
 
-		num_packets = bindings.Size_t(0)
+		num_packets = bindings.Size_t(10)
+		packets_buf = make([]bindings.Iovec, 10)
 
 		var ret = bindings.QuiclySendMsg(ptr_id, packets_buf, &num_packets)
 		if ret != bindings.QUICLY_OK {
@@ -96,10 +103,14 @@ func (s *QServerSession) connectionProcessHandler() {
 
 		s.outLock.Lock()
 		for i := 0; i < int(num_packets); i++ {
+			packets_buf[i].Deref() // realize the struct copy from C -> go
+
+			s.Logger.Info().Msgf("OUT packet to %s:%d, of %d bytes", addr, port, packets_buf[i].Iov_len)
+
 			s.outgoingQueue = append(s.outgoingQueue, packet{
 				data:    packets_buf[i].Iov_base,
 				dataLen: int(packets_buf[i].Iov_len),
-				addr:    nil,
+				addr:    returnAddr,
 			})
 		}
 		s.outLock.Unlock()
@@ -128,7 +139,8 @@ func (s *QServerSession) connectionOutHandler() {
 		s.outLock.Unlock()
 
 		for len(msgQueue) >= 1 {
-			s.Conn.Write(msgQueue[0].data)
+			s.Logger.Info().Msgf("SEND packet of len %d to %v", msgQueue[0].dataLen, msgQueue[0].addr.String())
+			s.Conn.WriteToUDP(msgQueue[0].data, msgQueue[0].addr)
 			msgQueue = msgQueue[1:]
 		}
 	}
