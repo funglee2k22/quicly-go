@@ -11,8 +11,12 @@ type Session interface {
 
 	OnStreamOpen(uint64)
 	OnStreamClose(uint64, int)
+
+	GetStream(uint64) Stream
 }
 
 type Stream interface {
 	net.Conn
+
+	OnReceived([]byte, int)
 }

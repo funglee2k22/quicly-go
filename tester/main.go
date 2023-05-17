@@ -8,6 +8,7 @@ import (
 	"github.com/Project-Faster/quicly-go"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	log "github.com/rs/zerolog"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -101,20 +102,26 @@ func handleServerStream(stream net.Conn) {
 	data := make([]byte, 4096)
 	for {
 		n, err := stream.Read(data)
-		//logger.Info().Msgf("Read: %n, %v\n", n, err)
 		if err != nil {
-			logger.Err(err).Send()
-			return
+			if err != io.EOF {
+				logger.Err(err).Send()
+				return
+			}
+			continue
 		}
+		logger.Info().Msgf("Read: %n, %v\n", n, err, string(data[:n]))
 
-		//logger.Info().Msgf("received: %v\n", string(data[:n]))
+		copy(data, `test`)
 
-		n, err = stream.Write(data[:n])
-		//logger.Info().Msgf("Write: %n, %v\n", n, err)
+		n, err = stream.Write(data[:4])
 		if err != nil {
-			logger.Err(err).Send()
-			return
+			if err != io.EOF {
+				logger.Err(err).Send()
+				return
+			}
+			continue
 		}
+		logger.Info().Msgf("Write: %n, %v\n", n, err)
 	}
 }
 

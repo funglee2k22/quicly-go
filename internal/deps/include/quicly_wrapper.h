@@ -15,17 +15,21 @@ enum {
   QUICLY_ERROR_NOT_OPEN = 4,       //!< Connection is not open so no state available
 };
 
-extern int  QuiclyInitializeEngine();
-extern int  QuiclyCloseEngine();
+struct iovec;
 
-extern int  QuiclyClientProcessMsg( const char* address, int port, char* msg, size_t dgram_len );
+extern int   QuiclyInitializeEngine();
+extern int   QuiclyCloseEngine();
 
-extern int  QuiclyServerProcessMsg( const char* address, int port, char* msg, size_t dgram_len, size_t* newconn_id );
+extern int   QuiclyClientProcessMsg( const char* address, int port, char* msg, size_t dgram_len );
 
-extern int  QuiclySendMsg( size_t id, struct iovec* dgram, size_t* num_dgrams );
+extern int   QuiclyServerProcessMsg( const char* address, int port, char* msg, size_t dgram_len, size_t* newconn_id );
 
-void  goQuiclyOnStreamOpen(uint64_t conn_id, uint64_t stream_id);
+extern int   QuiclySendMsg( size_t id, struct iovec* dgram, size_t* num_dgrams );
 
-void  goQuiclyOnStreamClose(uint64_t conn_id, uint64_t stream_id, int error);
+extern void  goQuiclyOnStreamOpen(uint64_t conn_id, uint64_t stream_id);
+
+extern void  goQuiclyOnStreamClose(uint64_t conn_id, uint64_t stream_id, int error);
+
+extern void  goQuiclyOnStreamReceived(uint64_t conn_id, uint64_t stream_id, struct iovec* packet);
 
 #endif

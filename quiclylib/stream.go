@@ -1,35 +1,60 @@
 package quiclylib
 
 import (
+	"fmt"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
+	"io"
 	"net"
+	"sync"
 	"time"
 )
 
 type QStream struct {
+	id      uint64
 	session types.Session
 	conn    net.Conn
-	id      uint64
+
+	packetInQueue []packet
+	inQueueLock   sync.Mutex
 }
 
 func (s *QStream) Read(b []byte) (n int, err error) {
-	if s.conn == nil {
-		return -1, net.ErrClosed
+	s.inQueueLock.Lock()
+	defer s.inQueueLock.Unlock()
+
+	if len(s.packetInQueue) > 0 {
+		data, lenData := s.packetInQueue[0].data, s.packetInQueue[0].dataLen
+		s.packetInQueue = s.packetInQueue[1:]
+		copy(b, data)
+		return lenData, nil
 	}
-	//n, s.returnAddr, err = s.conn.(*net.UDPConn).ReadFromUDP(b)
-	return n, err
+	return 0, io.EOF
 }
 
 func (s *QStream) Write(b []byte) (n int, err error) {
-	if s.conn == nil {
-		return -1, net.ErrClosed
-	}
-	//return s.conn.(*net.UDPConn).WriteToUDP(b, s.returnAddr)
-	return n, err
+	return -1, io.EOF
 }
 
 func (s *QStream) Close() error {
 	return nil
+}
+
+func (s *QStream) OnReceived(data []byte, dataLen int) {
+	fmt.Println(">>> received")
+	if s.packetInQueue == nil {
+		s.packetInQueue = make([]packet, 0, 128)
+	}
+
+	s.inQueueLock.Lock()
+	defer s.inQueueLock.Unlock()
+
+	buf := make([]byte, dataLen)
+	copy(buf, data)
+	s.packetInQueue = append(s.packetInQueue, packet{
+		data:    buf,
+		dataLen: dataLen,
+		addr:    nil,
+	})
 }
 
 func (s *QStream) LocalAddr() net.Addr {

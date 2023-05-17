@@ -45,6 +45,12 @@ func (s *QClientSession) OpenStream() types.Stream {
 	return st
 }
 
+func (s *QClientSession) GetStream(id uint64) types.Stream {
+	s.streamsLock.Lock()
+	defer s.streamsLock.Unlock()
+	return s.streams[id]
+}
+
 func (s *QClientSession) OnStreamOpen(streamId uint64) {
 	if s.OnStreamOpenCallback == nil {
 		return

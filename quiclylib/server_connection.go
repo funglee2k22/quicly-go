@@ -103,6 +103,7 @@ func (s *QServerSession) connectionProcessHandler() {
 		}
 
 		s.id = uint64(ptr_id)
+		bindings.RegisterConnection(s, s.id)
 
 		num_packets = bindings.Size_t(10)
 		packets_buf = make([]bindings.Iovec, 10)
@@ -163,6 +164,7 @@ func (s *QServerSession) start() {
 	}
 	s.streams = make(map[uint64]types.Stream)
 	s.streamAcceptQueue = make([]types.Stream, 0, 32)
+
 	go s.connectionInHandler()
 	go s.connectionProcessHandler()
 	go s.connectionOutHandler()
@@ -209,6 +211,7 @@ func (s *QServerSession) Close() error {
 	}
 	defer func() {
 		s.Conn = nil
+		bindings.RemoveConnection(s.id)
 	}()
 	s.streamsLock.Lock()
 	for _, stream := range s.streams {
@@ -231,10 +234,13 @@ func (s *QServerSession) OpenStream() types.Stream {
 	return nil
 }
 
+func (s *QServerSession) GetStream(id uint64) types.Stream {
+	s.streamsLock.Lock()
+	defer s.streamsLock.Unlock()
+	return s.streams[id]
+}
+
 func (s *QServerSession) OnStreamOpen(streamId uint64) {
-	if s.OnStreamOpenCallback == nil {
-		return
-	}
 	st := &QStream{
 		session: s,
 		conn:    s.Conn,
@@ -245,7 +251,9 @@ func (s *QServerSession) OnStreamOpen(streamId uint64) {
 	s.streamAcceptQueue = append(s.streamAcceptQueue, st)
 	s.streamsLock.Unlock()
 
-	s.OnStreamOpenCallback(st)
+	if s.OnStreamOpenCallback != nil {
+		s.OnStreamOpenCallback(st)
+	}
 }
 
 func (s *QServerSession) OnStreamClose(streamId uint64, error int) {

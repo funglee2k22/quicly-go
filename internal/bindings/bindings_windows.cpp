@@ -175,19 +175,27 @@ static void on_receive(quicly_stream_t *stream, size_t off, const void *src, siz
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
 
+    struct iovec vec = {
+      .iov_base = (char*)input.base,
+      .iov_len  = input.len,
+    };
+
+    const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
+    goQuiclyOnStreamReceived(uint64_t(cid->master_id), uint64_t(stream->stream_id), &vec);
+
 //    if (is_server()) {
         /* server: echo back to the client */
-    printf("trace %s:%d\n", __FILE__, __LINE__);
-        if (quicly_sendstate_is_open(&stream->sendstate) && (input.len > 0)) {
-    printf("trace %s:%d\n", __FILE__, __LINE__);
-            quicly_streambuf_egress_write(stream, input.base, input.len);
-            /* shutdown the stream after echoing all data */
-            if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
-    printf("trace %s:%d\n", __FILE__, __LINE__);
-                quicly_streambuf_egress_shutdown(stream);
-            }
-        }
-    printf("trace %s:%d\n", __FILE__, __LINE__);
+//    printf("trace %s:%d\n", __FILE__, __LINE__);
+//        if (quicly_sendstate_is_open(&stream->sendstate) && (input.len > 0)) {
+//    printf("trace %s:%d\n", __FILE__, __LINE__);
+//            quicly_streambuf_egress_write(stream, input.base, input.len);
+//            /* shutdown the stream after echoing all data */
+//            if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
+//    printf("trace %s:%d\n", __FILE__, __LINE__);
+//                quicly_streambuf_egress_shutdown(stream);
+//            }
+//        }
+//    printf("trace %s:%d\n", __FILE__, __LINE__);
 //    } else {
 //        /* client: print to stdout */
 //        printf("echo.c@%d\n", __LINE__ );

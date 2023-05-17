@@ -10,7 +10,7 @@ var _ types.Session = &QClientSession{}
 var _ types.Stream = &QStream{}
 
 func QuiclyInitializeEngine() int {
-	bindings.QuiclyResetRegistry()
+	bindings.ResetRegistry()
 
 	result := bindings.QuiclyInitializeEngine()
 	return int(result)
