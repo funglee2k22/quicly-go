@@ -26,8 +26,9 @@ type QServerSession struct {
 	id      uint64
 	started bool
 
-	streams     map[uint64]types.Stream
-	streamsLock sync.RWMutex
+	streams           map[uint64]types.Stream
+	streamsLock       sync.RWMutex
+	streamAcceptQueue []types.Stream
 
 	incomingQueue []packet
 	inLock        sync.Mutex
@@ -161,6 +162,7 @@ func (s *QServerSession) start() {
 		return
 	}
 	s.streams = make(map[uint64]types.Stream)
+	s.streamAcceptQueue = make([]types.Stream, 0, 32)
 	go s.connectionInHandler()
 	go s.connectionProcessHandler()
 	go s.connectionOutHandler()
@@ -180,11 +182,25 @@ func (s *QServerSession) enqueueOutgoingPacket(newPacket packet) {
 func (s *QServerSession) Accept() (net.Conn, error) {
 	s.start()
 
-	st := &QStream{
-		session: s,
-		conn:    s.Conn,
+	for {
+		select {
+		case <-time.After(1 * time.Millisecond):
+			continue
+		default:
+		}
+
+		s.streamsLock.RLock()
+		if len(s.streamAcceptQueue) > 0 {
+			s.streamsLock.RUnlock()
+			s.streamsLock.Lock()
+			defer s.streamsLock.Unlock()
+
+			st := s.streamAcceptQueue[0]
+			s.streamAcceptQueue = s.streamAcceptQueue[1:]
+			return st, nil
+		}
+		s.streamsLock.RUnlock()
 	}
-	return st, nil
 }
 
 func (s *QServerSession) Close() error {
@@ -194,6 +210,13 @@ func (s *QServerSession) Close() error {
 	defer func() {
 		s.Conn = nil
 	}()
+	s.streamsLock.Lock()
+	for _, stream := range s.streams {
+		stream.Close()
+	}
+	s.streamAcceptQueue = nil
+	s.streams = nil
+	s.streamsLock.Unlock()
 	return s.Conn.Close()
 }
 
@@ -219,6 +242,7 @@ func (s *QServerSession) OnStreamOpen(streamId uint64) {
 	}
 	s.streamsLock.Lock()
 	s.streams[streamId] = st
+	s.streamAcceptQueue = append(s.streamAcceptQueue, st)
 	s.streamsLock.Unlock()
 
 	s.OnStreamOpenCallback(st)

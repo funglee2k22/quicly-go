@@ -86,8 +86,7 @@ func runAsServer(ip *net.UDPAddr, ctx context.Context) {
 	c := quicly.Listen(ip, ctx)
 
 	for {
-		<-time.After(100 * time.Millisecond)
-
+		logger.Info().Msgf("accepting...")
 		st, err := c.Accept()
 		if err != nil {
 			logger.Err(err).Send()
@@ -95,7 +94,6 @@ func runAsServer(ip *net.UDPAddr, ctx context.Context) {
 		}
 
 		go handleServerStream(st)
-		return
 	}
 }
 
