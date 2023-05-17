@@ -4,6 +4,7 @@ import "C"
 import (
 	"context"
 	"github.com/Project-Faster/quicly-go/internal/bindings"
+	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"net"
 	"sync"
 	"time"
@@ -12,12 +13,21 @@ import (
 )
 
 type QServerSession struct {
+	// exported fields
 	Conn   *net.UDPConn
 	Ctx    context.Context
 	Logger log.Logger
 
+	// callback
+	OnStreamOpenCallback  func(stream types.Stream)
+	OnStreamCloseCallback func(stream types.Stream, error int)
+
+	// unexported fields
 	id      uint64
 	started bool
+
+	streams     map[uint64]types.Stream
+	streamsLock sync.RWMutex
 
 	incomingQueue []packet
 	inLock        sync.Mutex
@@ -150,9 +160,11 @@ func (s *QServerSession) start() {
 	if s.started {
 		return
 	}
+	s.streams = make(map[uint64]types.Stream)
 	go s.connectionInHandler()
 	go s.connectionProcessHandler()
 	go s.connectionOutHandler()
+	s.started = true
 }
 
 func (s *QServerSession) enqueueOutgoingPacket(newPacket packet) {
@@ -192,8 +204,35 @@ func (s *QServerSession) Addr() net.Addr {
 	return s.Conn.LocalAddr()
 }
 
-func (s *QServerSession) OpenStream() Stream {
+func (s *QServerSession) OpenStream() types.Stream {
 	return nil
+}
+
+func (s *QServerSession) OnStreamOpen(streamId uint64) {
+	if s.OnStreamOpenCallback == nil {
+		return
+	}
+	st := &QStream{
+		session: s,
+		conn:    s.Conn,
+		id:      streamId,
+	}
+	s.streamsLock.Lock()
+	s.streams[streamId] = st
+	s.streamsLock.Unlock()
+
+	s.OnStreamOpenCallback(st)
+}
+
+func (s *QServerSession) OnStreamClose(streamId uint64, error int) {
+	s.streamsLock.Lock()
+	closedStream := s.streams[streamId]
+	s.streams[streamId] = nil
+	s.streamsLock.Unlock()
+
+	if closedStream != nil && s.OnStreamCloseCallback != nil {
+		s.OnStreamCloseCallback(closedStream, error)
+	}
 }
 
 var _ net.Listener = &QServerSession{}

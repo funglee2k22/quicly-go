@@ -1,4 +1,4 @@
-package quiclylib
+package types
 
 import (
 	"net"
@@ -8,12 +8,11 @@ type Session interface {
 	net.Listener
 
 	OpenStream() Stream
-}
 
-var _ Session = &QServerSession{}
+	OnStreamOpen(uint64)
+	OnStreamClose(uint64, int)
+}
 
 type Stream interface {
 	net.Conn
 }
-
-var _ Stream = &QStream{}

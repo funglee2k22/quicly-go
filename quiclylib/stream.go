@@ -1,13 +1,15 @@
 package quiclylib
 
 import (
+	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"net"
 	"time"
 )
 
 type QStream struct {
-	session Session
+	session types.Session
 	conn    net.Conn
+	id      uint64
 }
 
 func (s *QStream) Read(b []byte) (n int, err error) {

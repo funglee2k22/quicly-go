@@ -134,9 +134,9 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
     printf("echo.c@%d\n", __LINE__ );
     stream->callbacks = &stream_callbacks;
 
+    // callback to go code
     const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
-
-    goquicly_on_stream_open( uint64_t(cid->master_id), uint64_t(stream->stream_id) );
+    goQuiclyOnStreamOpen( uint64_t(cid->master_id), uint64_t(stream->stream_id) );
 
     return 0;
 }
@@ -144,6 +144,10 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 static void on_destroy(quicly_stream_t *stream, int err)
 {
     printf( "stream %lld closed, err: %d\n", stream->stream_id, err );
+
+    // callback to go code
+    const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
+    goQuiclyOnStreamClose( uint64_t(cid->master_id), uint64_t(stream->stream_id), err );
 
     quicly_streambuf_destroy(stream, err);
 }

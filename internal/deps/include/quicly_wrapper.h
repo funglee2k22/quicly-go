@@ -24,6 +24,8 @@ extern int  QuiclyServerProcessMsg( const char* address, int port, char* msg, si
 
 extern int  QuiclySendMsg( size_t id, struct iovec* dgram, size_t* num_dgrams );
 
-void  goquicly_on_stream_open(uint64_t conn_id, uint64_t stream_id);
+void  goQuiclyOnStreamOpen(uint64_t conn_id, uint64_t stream_id);
+
+void  goQuiclyOnStreamClose(uint64_t conn_id, uint64_t stream_id, int error);
 
 #endif
