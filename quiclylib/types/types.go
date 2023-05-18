@@ -4,6 +4,14 @@ import (
 	"net"
 )
 
+type Callbacks struct {
+	OnConnectionOpen  func(connection Session)
+	OnConnectionClose func(connection Session)
+
+	OnStreamOpenCallback  func(stream Stream)
+	OnStreamCloseCallback func(stream Stream, error int)
+}
+
 type Session interface {
 	net.Listener
 

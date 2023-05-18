@@ -15,7 +15,7 @@ type QClientSession struct {
 	Logger log.Logger
 
 	// callback
-	Callbacks
+	types.Callbacks
 
 	// unexported fields
 	id          uint64
@@ -32,6 +32,10 @@ func (s *QClientSession) Accept() (net.Conn, error) {
 }
 
 func (s *QClientSession) Close() error {
+	if s.OnConnectionClose != nil && s.Conn != nil {
+		s.OnConnectionClose(s)
+	}
+
 	return nil
 }
 
@@ -55,16 +59,32 @@ func (s *QClientSession) GetStream(id uint64) types.Stream {
 }
 
 func (s *QClientSession) OnStreamOpen(streamId uint64) {
+	if s.OnConnectionOpen != nil && len(s.streams) == 1 {
+		s.OnConnectionOpen(s)
+	}
+
 	if s.OnStreamOpenCallback == nil {
 		return
 	}
 
-	s.OnStreamOpenCallback(nil)
+	s.streamsLock.Lock()
+	st, ok := s.streams[streamId]
+	s.streamsLock.Unlock()
+	if ok {
+		s.OnStreamOpenCallback(st)
+	}
 }
 
 func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
-	if s.OnStreamCloseCallback != nil {
-		s.OnStreamCloseCallback(nil, error)
+	if s.OnStreamCloseCallback == nil {
+		return
+	}
+
+	s.streamsLock.Lock()
+	st, ok := s.streams[streamId]
+	s.streamsLock.Unlock()
+	if ok {
+		s.OnStreamCloseCallback(st, error)
 	}
 }
 

@@ -20,9 +20,9 @@ struct iovec;
 extern int   QuiclyInitializeEngine();
 extern int   QuiclyCloseEngine();
 
-extern int   QuiclyClientProcessMsg( const char* address, int port, char* msg, size_t dgram_len );
+extern int   QuiclyProcessMsg( const char* address, int port, char* msg, size_t dgram_len, size_t* id );
 
-extern int   QuiclyServerProcessMsg( const char* address, int port, char* msg, size_t dgram_len, size_t* newconn_id );
+extern int   QuiclyConnect();
 
 extern int   QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgram, size_t* num_dgrams );
 

@@ -9,10 +9,9 @@ var _ types.Session = &QServerSession{}
 var _ types.Session = &QClientSession{}
 var _ types.Stream = &QStream{}
 
-type Callbacks struct {
-	OnStreamOpenCallback  func(stream types.Stream)
-	OnStreamCloseCallback func(stream types.Stream, error int)
-}
+const (
+	BUF_SIZE = 4096
+)
 
 func QuiclyInitializeEngine() int {
 	bindings.ResetRegistry()

@@ -34,14 +34,16 @@ func QuiclyCloseEngine() int32 {
 	return __v
 }
 
-// QuiclyClientProcessMsg function as declared in include/quicly_wrapper.h:23
-func QuiclyClientProcessMsg(Address string, Port int32, Msg []byte, Dgram_len Size_t) int32 {
+// QuiclyProcessMsg function as declared in include/quicly_wrapper.h:23
+func QuiclyProcessMsg(Address string, Port int32, Msg []byte, Dgram_len Size_t, Id *Size_t) int32 {
 	Address = safeString(Address)
 	cAddress, cAddressAllocMap := unpackPCharString(Address)
 	cPort, cPortAllocMap := (C.int)(Port), cgoAllocsUnknown
 	cMsg, cMsgAllocMap := copyPCharBytes((*sliceHeader)(unsafe.Pointer(&Msg)))
 	cDgram_len, cDgram_lenAllocMap := (C.size_t)(Dgram_len), cgoAllocsUnknown
-	__ret := C.QuiclyClientProcessMsg(cAddress, cPort, cMsg, cDgram_len)
+	cId, cIdAllocMap := (*C.size_t)(unsafe.Pointer(Id)), cgoAllocsUnknown
+	__ret := C.QuiclyProcessMsg(cAddress, cPort, cMsg, cDgram_len, cId)
+	runtime.KeepAlive(cIdAllocMap)
 	runtime.KeepAlive(cDgram_lenAllocMap)
 	runtime.KeepAlive(cMsgAllocMap)
 	runtime.KeepAlive(cPortAllocMap)
@@ -51,21 +53,9 @@ func QuiclyClientProcessMsg(Address string, Port int32, Msg []byte, Dgram_len Si
 	return __v
 }
 
-// QuiclyServerProcessMsg function as declared in include/quicly_wrapper.h:25
-func QuiclyServerProcessMsg(Address string, Port int32, Msg []byte, Dgram_len Size_t, Newconn_id *Size_t) int32 {
-	Address = safeString(Address)
-	cAddress, cAddressAllocMap := unpackPCharString(Address)
-	cPort, cPortAllocMap := (C.int)(Port), cgoAllocsUnknown
-	cMsg, cMsgAllocMap := copyPCharBytes((*sliceHeader)(unsafe.Pointer(&Msg)))
-	cDgram_len, cDgram_lenAllocMap := (C.size_t)(Dgram_len), cgoAllocsUnknown
-	cNewconn_id, cNewconn_idAllocMap := (*C.size_t)(unsafe.Pointer(Newconn_id)), cgoAllocsUnknown
-	__ret := C.QuiclyServerProcessMsg(cAddress, cPort, cMsg, cDgram_len, cNewconn_id)
-	runtime.KeepAlive(cNewconn_idAllocMap)
-	runtime.KeepAlive(cDgram_lenAllocMap)
-	runtime.KeepAlive(cMsgAllocMap)
-	runtime.KeepAlive(cPortAllocMap)
-	runtime.KeepAlive(Address)
-	runtime.KeepAlive(cAddressAllocMap)
+// QuiclyConnect function as declared in include/quicly_wrapper.h:25
+func QuiclyConnect() int32 {
+	__ret := C.QuiclyConnect()
 	__v := (int32)(__ret)
 	return __v
 }

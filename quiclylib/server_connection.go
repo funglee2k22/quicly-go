@@ -19,7 +19,7 @@ type QServerSession struct {
 	Logger log.Logger
 
 	// callback
-	Callbacks
+	types.Callbacks
 
 	// unexported fields
 	id      uint64
@@ -44,7 +44,7 @@ func (s *QServerSession) ID() uint64 {
 }
 
 func (s *QServerSession) connectionInHandler() {
-	var buff = make([]byte, 4096)
+	var buff = make([]byte, BUF_SIZE)
 	s.incomingQueue = make([]packet, 0, 512)
 	for {
 		select {
@@ -66,7 +66,7 @@ func (s *QServerSession) connectionInHandler() {
 			dataLen: n,
 			addr:    addr,
 		})
-		buff = make([]byte, 4096)
+		buff = make([]byte, BUF_SIZE)
 		s.inLock.Unlock()
 	}
 }
@@ -101,7 +101,7 @@ func (s *QServerSession) connectionProcessHandler() {
 
 		var ptr_id bindings.Size_t = 0
 
-		if bindings.QuiclyServerProcessMsg(addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
+		if bindings.QuiclyProcessMsg(addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
 			continue
 		}
 
@@ -215,6 +215,9 @@ func (s *QServerSession) Close() error {
 	defer func() {
 		s.Conn = nil
 		bindings.RemoveConnection(s.id)
+		if s.OnConnectionClose != nil {
+			s.OnConnectionClose(s)
+		}
 	}()
 	s.streamsLock.Lock()
 	for _, stream := range s.streams {
@@ -244,6 +247,10 @@ func (s *QServerSession) GetStream(id uint64) types.Stream {
 }
 
 func (s *QServerSession) OnStreamOpen(streamId uint64) {
+	if s.OnConnectionOpen != nil && len(s.streams) == 1 {
+		s.OnConnectionOpen(s)
+	}
+
 	st := &QStream{
 		session: s,
 		conn:    s.Conn,

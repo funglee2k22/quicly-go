@@ -215,12 +215,7 @@ static void on_receive(quicly_stream_t *stream, size_t off, const void *src, siz
 
 // ----- Connection ----- //
 
-int QuiclyClientProcessMsg( const char* address, int port, char* msg, size_t dgram_len )
-{
-    return QUICLY_OK;
-}
-
-int QuiclyServerProcessMsg( const char* _address, int port, char* msg, size_t dgram_len, size_t* id )
+int QuiclyProcessMsg( const char* _address, int port, char* msg, size_t dgram_len, size_t* id )
 {
     size_t off = 0, i = 0;
 
