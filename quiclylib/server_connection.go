@@ -108,7 +108,7 @@ func (s *QServerSession) connectionProcessHandler() {
 		num_packets = bindings.Size_t(10)
 		packets_buf = make([]bindings.Iovec, 10)
 
-		var ret = bindings.QuiclySendMsg(ptr_id, packets_buf, &num_packets)
+		var ret = bindings.QuiclyOutgoingMsgQueue(ptr_id, packets_buf, &num_packets)
 		if ret != bindings.QUICLY_OK {
 			continue
 		}

@@ -257,7 +257,6 @@ int QuiclyServerProcessMsg( const char* _address, int port, char* msg, size_t dg
             }
             /* assume that the packet is a new connection */
             ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, &decoded, NULL, &next_cid, NULL, NULL);
-            printf("%s@%d, %d %p == %p\n", __FILE__, __LINE__, ret, *(conns_table + *id), conns_table[*id] );
         }
         if( ret != 0 ) {
           *id = 0;
@@ -268,13 +267,12 @@ int QuiclyServerProcessMsg( const char* _address, int port, char* msg, size_t dg
     return QUICLY_OK;
 }
 
-int QuiclySendMsg( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
+int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
 {
     quicly_address_t dest, src;
     uint8_t dgrams_buf[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
 
     int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, sizeof(dgrams_buf));
-
 
     switch (ret) {
 //    case 0:
@@ -302,6 +300,26 @@ int QuiclySendMsg( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
 
 // ----- Stream ----- //
 
+int QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram_len )
+{
+printf("trace %s:%d\n", __FILE__, __LINE__);
+    if( conn_id > 255 ) {
+        return QUICLY_ERROR_FAILED;
+    }
+printf("trace %s:%d\n", __FILE__, __LINE__);
 
+    quicly_stream_t *stream = quicly_get_stream(conns_table[conn_id], stream_id);
+    if( stream == NULL ) {
+printf("trace %s:%d\n", __FILE__, __LINE__);
+        return QUICLY_ERROR_FAILED;
+    }
+
+    if (quicly_sendstate_is_open(&stream->sendstate) && (dgram_len > 0)) {
+printf("trace %s:%d\n", __FILE__, __LINE__);
+        quicly_streambuf_egress_write(stream, msg, dgram_len);
+    }
+
+    return QUICLY_OK;
+}
 
 #endif

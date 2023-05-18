@@ -1,7 +1,10 @@
 package quiclylib
 
+import "C"
 import (
 	"fmt"
+	"github.com/Project-Faster/quicly-go/internal/bindings"
+	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"io"
 	"net"
@@ -32,6 +35,9 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 }
 
 func (s *QStream) Write(b []byte) (n int, err error) {
+	if err := bindings.QuiclyWriteStream(C.Size_t(s.conn.ID()), C.Size_t(s.id), b, C.Size_t(len(b))); err == errors.QUICLY_OK {
+		return len(b), nil
+	}
 	return -1, io.EOF
 }
 

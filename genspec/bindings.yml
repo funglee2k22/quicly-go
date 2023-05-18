@@ -41,10 +41,11 @@ TRANSLATOR:
       - { action: accept, from: "^iovec" }
       - { action: accept, from: "^size_t$" }
       - { action: accept, from: "^QUICLY_OK|QUICLY_ERROR_" }
+      - { action: ignore, from: "goQuicly" }
       - { action: accept, from: "Quicly" }
       - { transform: export }
   PtrTips:
     function:
       - { target: QuiclyClientProcessMsg, tips: [ 0,0,0,ref ] }
       - { target: QuiclyServerProcessMsg, tips: [ 0,0,0,ref,ref ] }
-      - { target: QuiclySendMsg, tips: [ 0,0,ref ] }
+      - { target: QuiclyOutgoingMsgQueue, tips: [ 0,0,ref ] }
