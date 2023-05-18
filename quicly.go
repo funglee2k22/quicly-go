@@ -49,7 +49,7 @@ func Terminate() {
 	}
 }
 
-func Listen(localAddr *net.UDPAddr, ctx context.Context) types.Session {
+func Listen(localAddr *net.UDPAddr, cb quiclylib.Callbacks, ctx context.Context) types.Session {
 	udpConn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
 		logger.Error().Msgf("Could not listen on specified udp address: %v", err)
@@ -57,15 +57,16 @@ func Listen(localAddr *net.UDPAddr, ctx context.Context) types.Session {
 	}
 
 	conn := &quiclylib.QServerSession{
-		Conn:   udpConn,
-		Ctx:    ctx,
-		Logger: logger,
+		Conn:      udpConn,
+		Ctx:       ctx,
+		Logger:    logger,
+		Callbacks: cb,
 	}
 
 	return conn
 }
 
-func Dial(remoteAddr *net.UDPAddr, ctx context.Context) types.Session {
+func Dial(remoteAddr *net.UDPAddr, cb quiclylib.Callbacks, ctx context.Context) types.Session {
 	udpConn, err := net.DialUDP("udp", nil, remoteAddr)
 	if err != nil {
 		logger.Error().Msgf("Could not dial the specified udp address: %v", err)
@@ -73,9 +74,10 @@ func Dial(remoteAddr *net.UDPAddr, ctx context.Context) types.Session {
 	}
 
 	conn := &quiclylib.QClientSession{
-		Conn:   udpConn,
-		Ctx:    ctx,
-		Logger: logger,
+		Conn:      udpConn,
+		Ctx:       ctx,
+		Logger:    logger,
+		Callbacks: cb,
 	}
 
 	return conn

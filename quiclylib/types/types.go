@@ -7,6 +7,8 @@ import (
 type Session interface {
 	net.Listener
 
+	ID() uint64
+
 	OpenStream() Stream
 
 	OnStreamOpen(uint64)
@@ -17,6 +19,8 @@ type Session interface {
 
 type Stream interface {
 	net.Conn
+
+	ID() uint64
 
 	OnReceived([]byte, int)
 }

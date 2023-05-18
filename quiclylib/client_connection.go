@@ -15,13 +15,16 @@ type QClientSession struct {
 	Logger log.Logger
 
 	// callback
-	OnStreamOpenCallback  func(stream types.Stream)
-	OnStreamCloseCallback func(stream types.Stream, error int)
+	Callbacks
 
 	// unexported fields
 	id          uint64
 	streams     map[uint64]types.Stream
 	streamsLock sync.RWMutex
+}
+
+func (s *QClientSession) ID() uint64 {
+	return s.id
 }
 
 func (s *QClientSession) Accept() (net.Conn, error) {

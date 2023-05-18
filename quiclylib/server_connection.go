@@ -19,8 +19,7 @@ type QServerSession struct {
 	Logger log.Logger
 
 	// callback
-	OnStreamOpenCallback  func(stream types.Stream)
-	OnStreamCloseCallback func(stream types.Stream, error int)
+	Callbacks
 
 	// unexported fields
 	id      uint64
@@ -38,6 +37,10 @@ type QServerSession struct {
 
 	dataQueue []packet
 	dataLock  sync.Mutex
+}
+
+func (s *QServerSession) ID() uint64 {
+	return s.id
 }
 
 func (s *QServerSession) connectionInHandler() {

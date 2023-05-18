@@ -21,6 +21,10 @@ type QStream struct {
 	inQueueLock   sync.Mutex
 }
 
+func (s *QStream) ID() uint64 {
+	return s.id
+}
+
 func (s *QStream) Read(b []byte) (n int, err error) {
 	s.inQueueLock.Lock()
 	defer s.inQueueLock.Unlock()
@@ -35,7 +39,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 }
 
 func (s *QStream) Write(b []byte) (n int, err error) {
-	if err := bindings.QuiclyWriteStream(C.Size_t(s.conn.ID()), C.Size_t(s.id), b, C.Size_t(len(b))); err == errors.QUICLY_OK {
+	if err := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), b, bindings.Size_t(len(b))); err == errors.QUICLY_OK {
 		return len(b), nil
 	}
 	return -1, io.EOF

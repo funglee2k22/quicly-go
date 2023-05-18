@@ -302,20 +302,16 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
 
 int QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram_len )
 {
-printf("trace %s:%d\n", __FILE__, __LINE__);
     if( conn_id > 255 ) {
         return QUICLY_ERROR_FAILED;
     }
-printf("trace %s:%d\n", __FILE__, __LINE__);
 
     quicly_stream_t *stream = quicly_get_stream(conns_table[conn_id], stream_id);
     if( stream == NULL ) {
-printf("trace %s:%d\n", __FILE__, __LINE__);
         return QUICLY_ERROR_FAILED;
     }
 
     if (quicly_sendstate_is_open(&stream->sendstate) && (dgram_len > 0)) {
-printf("trace %s:%d\n", __FILE__, __LINE__);
         quicly_streambuf_egress_write(stream, msg, dgram_len);
     }
 

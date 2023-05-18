@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Project-Faster/quicly-go"
+	"github.com/Project-Faster/quicly-go/quiclylib"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
+	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
 	"io"
 	"net"
@@ -68,7 +70,7 @@ func main() {
 }
 
 func runAsClient(ip *net.UDPAddr, ctx context.Context) {
-	c := quicly.Dial(ip, ctx)
+	c := quicly.Dial(ip, quiclylib.Callbacks{}, ctx)
 	defer func() {
 		c.Close()
 	}()
@@ -84,7 +86,14 @@ func runAsClient(ip *net.UDPAddr, ctx context.Context) {
 }
 
 func runAsServer(ip *net.UDPAddr, ctx context.Context) {
-	c := quicly.Listen(ip, ctx)
+	c := quicly.Listen(ip, quiclylib.Callbacks{
+		OnStreamOpenCallback: func(stream types.Stream) {
+			logger.Info().Msgf(">> Callback open %d", stream.ID())
+		},
+		OnStreamCloseCallback: func(stream types.Stream, error int) {
+			logger.Info().Msgf(">> Callback close %d, error %d", stream.ID(), error)
+		},
+	}, ctx)
 
 	for {
 		logger.Info().Msgf("accepting...")
@@ -111,9 +120,7 @@ func handleServerStream(stream net.Conn) {
 		}
 		logger.Info().Msgf("Read: %n, %v\n", n, err, string(data[:n]))
 
-		copy(data, `test`)
-
-		n, err = stream.Write(data[:4])
+		n, err = stream.Write(data[:n])
 		if err != nil {
 			if err != io.EOF {
 				logger.Err(err).Send()
