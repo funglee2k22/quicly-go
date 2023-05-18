@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Project-Faster/quicly-go"
-	"github.com/Project-Faster/quicly-go/quiclylib"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
@@ -33,12 +32,6 @@ func main() {
 
 	result := quicly.Initialize(quicly.Options{
 		Logger: &logger,
-		OnOpen: func() {
-			logger.Print("OnStart")
-		},
-		OnClose: func() {
-			logger.Print("OnClose")
-		},
 	})
 	if result != errors.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
@@ -70,7 +63,7 @@ func main() {
 }
 
 func runAsClient(ip *net.UDPAddr, ctx context.Context) {
-	c := quicly.Dial(ip, quiclylib.Callbacks{}, ctx)
+	c := quicly.Dial(ip, types.Callbacks{}, ctx)
 	defer func() {
 		c.Close()
 	}()
@@ -86,7 +79,13 @@ func runAsClient(ip *net.UDPAddr, ctx context.Context) {
 }
 
 func runAsServer(ip *net.UDPAddr, ctx context.Context) {
-	c := quicly.Listen(ip, quiclylib.Callbacks{
+	c := quicly.Listen(ip, types.Callbacks{
+		OnConnectionOpen: func(conn types.Session) {
+			logger.Print("OnStart")
+		},
+		OnConnectionClose: func(conn types.Session) {
+			logger.Print("OnClose")
+		},
 		OnStreamOpenCallback: func(stream types.Stream) {
 			logger.Info().Msgf(">> Callback open %d", stream.ID())
 		},

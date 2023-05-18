@@ -46,5 +46,6 @@ TRANSLATOR:
       - { transform: export }
   PtrTips:
     function:
+      - { target: QuiclyConnect, tips: [ 0,0,ref ] }
       - { target: QuiclyProcessMsg, tips: [ 0,0,0,ref,ref ] }
       - { target: QuiclyOutgoingMsgQueue, tips: [ 0,0,ref ] }

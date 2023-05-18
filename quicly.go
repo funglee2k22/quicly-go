@@ -34,22 +34,15 @@ func Initialize(options Options) int {
 	}
 
 	logger.Info().Msg("Initialized")
-
-	if opt.OnOpen != nil {
-		opt.OnOpen()
-	}
 	return errors.QUICLY_OK
 }
 
 func Terminate() {
 	quiclylib.QuiclyCloseEngine()
 	logger.Info().Msg("Terminated")
-	if opt.OnClose != nil {
-		opt.OnClose()
-	}
 }
 
-func Listen(localAddr *net.UDPAddr, cb quiclylib.Callbacks, ctx context.Context) types.Session {
+func Listen(localAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) types.Session {
 	udpConn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
 		logger.Error().Msgf("Could not listen on specified udp address: %v", err)
@@ -66,7 +59,7 @@ func Listen(localAddr *net.UDPAddr, cb quiclylib.Callbacks, ctx context.Context)
 	return conn
 }
 
-func Dial(remoteAddr *net.UDPAddr, cb quiclylib.Callbacks, ctx context.Context) types.Session {
+func Dial(remoteAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) types.Session {
 	udpConn, err := net.DialUDP("udp", nil, remoteAddr)
 	if err != nil {
 		logger.Error().Msgf("Could not dial the specified udp address: %v", err)
