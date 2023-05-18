@@ -183,53 +183,55 @@ static void on_receive(quicly_stream_t *stream, size_t off, const void *src, siz
     const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
     goQuiclyOnStreamReceived(uint64_t(cid->master_id), uint64_t(stream->stream_id), &vec);
 
-//    if (is_server()) {
-        /* server: echo back to the client */
-//    printf("trace %s:%d\n", __FILE__, __LINE__);
-//        if (quicly_sendstate_is_open(&stream->sendstate) && (input.len > 0)) {
-//    printf("trace %s:%d\n", __FILE__, __LINE__);
-//            quicly_streambuf_egress_write(stream, input.base, input.len);
-//            /* shutdown the stream after echoing all data */
-//            if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
-//    printf("trace %s:%d\n", __FILE__, __LINE__);
-//                quicly_streambuf_egress_shutdown(stream);
-//            }
-//        }
-//    printf("trace %s:%d\n", __FILE__, __LINE__);
-//    } else {
-//        /* client: print to stdout */
-//        printf("echo.c@%d\n", __LINE__ );
-//        fwrite(input.base, 1, input.len, stdout);
-//        fflush(stdout);
-//        /* initiate connection close after receiving all data */
-//        if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
-//            printf("echo.c@%d\n", __LINE__ );
-//            quicly_close(stream->conn, 0, "");
-//        }
-//    }
-
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
     printf("trace %s:%d\n", __FILE__, __LINE__);
 }
 
 // ----- Connection ----- //
-int QuiclyConnect( const char* address, int port, size_t* id )
+int QuiclyConnect( const char* _address, int port, size_t* id )
 {
+    struct in_addr byte_addr;
+    byte_addr.s_addr = inet_addr(_address);
+
+    struct sockaddr_in address{
+      .sin_family = AF_INET,
+      .sin_port = htons(port),
+      .sin_addr = byte_addr
+    };
+
+    int i;
+    for (i = 0; i < 256; ++i)
+    {
+      if( conns_table[i] == NULL )
+        break;
+    }
+
+    /* initiate a connection, and open a stream */
+    int ret = 0;
+    if ((ret = quicly_connect(conns_table + i, &ctx,
+                              _address, (struct sockaddr *)&address, NULL,
+                              &next_cid, ptls_iovec_init(NULL, 0), NULL, NULL, NULL)) != 0)
+    {
+        fprintf(stderr, "quicly_connect failed:%d\n", ret);
+        return QUICLY_ERROR_FAILED;
+    }
+
     return QUICLY_OK;
 }
 
-int QuiclyClose( size_t conn_id, size_t stream_id, int error )
+int QuiclyClose( size_t conn_id, int error )
 {
-    return QUICLY_OK;
+    if( conn_id > 255 || conns_table[conn_id] == NULL ) {
+        return QUICLY_ERROR_FAILED;
+    }
+
+    int ret = quicly_close(conns_table[conn_id], QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(error), "");
+    conns_table[conn_id] = NULL;
+    return ret;
 }
 
-int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
-{
-    return QUICLY_OK;
-}
-
-int QuiclyProcessMsg( const char* _address, int port, char* msg, size_t dgram_len, size_t* id )
+int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, size_t dgram_len, size_t* id )
 {
     size_t off = 0, i = 0;
 
@@ -241,8 +243,6 @@ int QuiclyProcessMsg( const char* _address, int port, char* msg, size_t dgram_le
       .sin_port = htons(port),
       .sin_addr = byte_addr
     };
-
-    int is_client = 0;
 
     /* split UDP datagram into multiple QUIC packets */
     while (off < dgram_len) {
@@ -309,9 +309,41 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
 
 // ----- Stream ----- //
 
+int QuiclyOpenStream( size_t conn_id, size_t* stream_id )
+{
+    if( conn_id > 255 || conns_table[conn_id] == NULL ) {
+        return QUICLY_ERROR_FAILED;
+    }
+
+    quicly_conn_t* client = conns_table[conn_id];
+
+    quicly_stream_t *stream = NULL;
+    int ret = quicly_open_stream(client, &stream, 0);
+    if( ret == QUICLY_OK ) {
+      *stream_id = stream->stream_id;
+    }
+    return ret;
+}
+
+int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
+{
+    if( conn_id > 255 || conns_table[conn_id] == NULL ) {
+        return QUICLY_ERROR_FAILED;
+    }
+
+    quicly_stream_t *stream = quicly_get_stream(conns_table[conn_id], stream_id);
+    if( stream == NULL ) {
+        return QUICLY_ERROR_FAILED;
+    }
+
+    quicly_streambuf_egress_shutdown(stream);
+
+    return QUICLY_OK;
+}
+
 int QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram_len )
 {
-    if( conn_id > 255 ) {
+    if( conn_id > 255 || conns_table[conn_id] == NULL ) {
         return QUICLY_ERROR_FAILED;
     }
 

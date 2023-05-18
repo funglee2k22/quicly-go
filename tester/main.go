@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 var logger log.Logger
@@ -63,19 +62,30 @@ func main() {
 }
 
 func runAsClient(ip *net.UDPAddr, ctx context.Context) {
-	c := quicly.Dial(ip, types.Callbacks{}, ctx)
+	c := quicly.Dial(ip, types.Callbacks{
+		OnConnectionOpen: func(conn types.Session) {
+			logger.Print("OnStart")
+		},
+		OnConnectionClose: func(conn types.Session) {
+			logger.Print("OnClose")
+		},
+		OnStreamOpenCallback: func(stream types.Stream) {
+			logger.Info().Msgf(">> Callback open %d", stream.ID())
+		},
+		OnStreamCloseCallback: func(stream types.Stream, error int) {
+			logger.Info().Msgf(">> Callback close %d, error %d", stream.ID(), error)
+		},
+	}, ctx)
 	defer func() {
 		c.Close()
 	}()
 
-	for {
-		<-time.After(100 * time.Millisecond)
-
-		st := c.OpenStream()
-
-		go handleClientStream(st)
+	st := c.OpenStream()
+	if st == nil {
 		return
 	}
+
+	handleClientStream(st)
 }
 
 func runAsServer(ip *net.UDPAddr, ctx context.Context) {
@@ -134,15 +144,25 @@ func handleServerStream(stream net.Conn) {
 func handleClientStream(stream net.Conn) {
 	scan := bufio.NewScanner(os.Stdin)
 	for scan.Scan() {
-		logger.Info().Msgf("Read: %d\n", len(scan.Text()))
-
-		logger.Info().Msgf("received: %v\n", scan.Text())
-
 		n, err := stream.Write(scan.Bytes())
-		logger.Info().Msgf("Write: %n, %v\n", n, err)
 		if err != nil {
-			logger.Err(err).Send()
-			return
+			if err != io.EOF {
+				logger.Err(err).Send()
+				return
+			}
+			continue
 		}
+		logger.Info().Msgf("Write: %n, %v\n", n, err)
+
+		data := make([]byte, 4096)
+		n, err = stream.Read(data)
+		if err != nil {
+			if err != io.EOF {
+				logger.Err(err).Send()
+				return
+			}
+			continue
+		}
+		logger.Info().Msgf("Read: %n, %v\n", n, err, string(data[:n]))
 	}
 }

@@ -71,17 +71,14 @@ func goQuiclyOnStreamReceived(conn_id C.uint64_t, stream_id C.uint64_t, data *C.
 	callbackLock.Unlock()
 
 	if !ok {
-		fmt.Printf("err1\n")
 		return
 	}
 
 	st := conn.GetStream(uint64(stream_id))
 	if st == nil {
-		fmt.Printf("err2\n")
 		return
 	}
 
-	fmt.Printf("rec\n")
 	vIn := Iovec{}
 	vIn.ref4b778f8 = data
 	vIn.Deref()

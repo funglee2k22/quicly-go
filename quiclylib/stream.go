@@ -46,6 +46,7 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 }
 
 func (s *QStream) Close() error {
+	bindings.QuiclyCloseStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), int32(0))
 	return nil
 }
 

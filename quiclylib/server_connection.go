@@ -101,7 +101,7 @@ func (s *QServerSession) connectionProcessHandler() {
 
 		var ptr_id bindings.Size_t = 0
 
-		if bindings.QuiclyProcessMsg(addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
+		if bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
 			continue
 		}
 
