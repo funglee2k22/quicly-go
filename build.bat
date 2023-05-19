@@ -35,10 +35,14 @@ ECHO [Prerequisites check: cmake]
 cmake --version
 if %ERRORLEVEL% GEQ 1 goto fail
 
+ECHO [Prerequisites check: git]
+git version
+if %ERRORLEVEL% GEQ 1 goto fail
 
 echo [Init submodules]
-git init deps\openssl
-git init deps\quicly
+git submodule init deps/openssl
+git submodule init deps/quicly
+git submodule init deps/c-for-go
 
 echo [Update submodules]
 git submodule update --init --recursive
