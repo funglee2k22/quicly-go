@@ -97,4 +97,5 @@ exit /B 1
 cd %BASEDIR%
 go clean -cache -x
 git reset --hard
+git clean -f -d
 exit /B 0
