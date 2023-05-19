@@ -10,8 +10,8 @@ set BASEDIR=%~dp0
 echo %BASEDIR%
 
 ECHO [Prerequisites check: C_FOR_GO]
-c-for-go -h
-if %ERRORLEVEL% EQ 0 goto gen
+c_for_go.exe -h
+if %ERRORLEVEL% EQU 0 goto gen
 
 echo [Build C-FOR-GO]
 cd deps/c-for-go
