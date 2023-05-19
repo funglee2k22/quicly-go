@@ -167,11 +167,9 @@ static void on_receive_reset(quicly_stream_t *stream, int err)
 static void on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
     /* read input to receive buffer */
-    printf("trace %s:%d\n", __FILE__, __LINE__);
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
 
-    printf("trace %s:%d\n", __FILE__, __LINE__);
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
 
@@ -185,7 +183,6 @@ static void on_receive(quicly_stream_t *stream, size_t off, const void *src, siz
 
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
-    printf("trace %s:%d\n", __FILE__, __LINE__);
 }
 
 // ----- Connection ----- //

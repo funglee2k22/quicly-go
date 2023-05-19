@@ -90,7 +90,6 @@ func (s *QClientSession) connectionProcessHandler() {
 		} else {
 			pkt := s.incomingQueue[0]
 			s.incomingQueue = s.incomingQueue[1:]
-			s.Logger.Info().Msgf("PROCESS packet from %v", pkt.addr.String())
 			s.outLock.Unlock()
 
 			returnAddr = pkt.addr
@@ -98,7 +97,7 @@ func (s *QClientSession) connectionProcessHandler() {
 
 			var ptr_id bindings.Size_t = 0
 
-			if bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
+			if bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
 				continue
 			}
 
@@ -125,7 +124,7 @@ func (s *QClientSession) connectionProcessHandler() {
 			s.outgoingQueue = append(s.outgoingQueue, packet{
 				data:    packets_buf[i].Iov_base,
 				dataLen: int(packets_buf[i].Iov_len),
-				addr:    returnAddr,
+				addr:    nil,
 			})
 		}
 		s.outLock.Unlock()
@@ -154,8 +153,8 @@ func (s *QClientSession) connectionOutHandler() {
 		s.outLock.Unlock()
 
 		for len(msgQueue) >= 1 {
-			s.Logger.Info().Msgf("SEND packet of len %d to %v", msgQueue[0].dataLen, msgQueue[0].addr.String())
-			s.Conn.WriteToUDP(msgQueue[0].data, msgQueue[0].addr)
+			n, err := s.Conn.Write(msgQueue[0].data)
+			s.Logger.Info().Msgf("SEND packet of len %d to %v [%d:%v]", msgQueue[0].dataLen, msgQueue[0].addr.String(), n, err)
 			msgQueue = msgQueue[1:]
 		}
 	}
