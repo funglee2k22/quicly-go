@@ -17,7 +17,7 @@ enum {
 
 struct iovec;
 
-extern int   QuiclyInitializeEngine();
+extern int   QuiclyInitializeEngine( const char* certificate_file, const char* key_file );
 
 extern int   QuiclyCloseEngine();
 

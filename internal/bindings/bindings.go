@@ -21,8 +21,16 @@ import (
 )
 
 // QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:20
-func QuiclyInitializeEngine() int32 {
-	__ret := C.QuiclyInitializeEngine()
+func QuiclyInitializeEngine(Certificate_file string, Key_file string) int32 {
+	Certificate_file = safeString(Certificate_file)
+	cCertificate_file, cCertificate_fileAllocMap := unpackPCharString(Certificate_file)
+	Key_file = safeString(Key_file)
+	cKey_file, cKey_fileAllocMap := unpackPCharString(Key_file)
+	__ret := C.QuiclyInitializeEngine(cCertificate_file, cKey_file)
+	runtime.KeepAlive(Key_file)
+	runtime.KeepAlive(cKey_fileAllocMap)
+	runtime.KeepAlive(Certificate_file)
+	runtime.KeepAlive(cCertificate_fileAllocMap)
 	__v := (int32)(__ret)
 	return __v
 }

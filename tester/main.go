@@ -26,12 +26,20 @@ func main() {
 	var clientFlag = flag.Bool("client", false, "Mode is client")
 	var remoteHost = flag.String("host", "127.0.0.1", "Host address to use")
 	var remotePort = flag.Int("port", 8443, "Port to use")
+	var certFile = flag.String("cert", "server_cert.pem", "PEM certificate to use")
+	var certKey = flag.String("key", "", "PEM key for the certificate")
 
 	flag.Parse()
 
-	result := quicly.Initialize(quicly.Options{
-		Logger: &logger,
-	})
+	options := quicly.Options{
+		Logger:          &logger,
+		CertificateFile: *certFile,
+		CertificateKey:  *certKey,
+	}
+
+	logger.Info().Msgf("Options: %v", options)
+
+	result := quicly.Initialize(options)
 	if result != errors.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
 		os.Exit(1)
@@ -58,7 +66,6 @@ func main() {
 	logger.Info().Msg("Received termination signal")
 
 	quicly.Terminate()
-	logger.Print("finish")
 }
 
 func runAsClient(ip *net.UDPAddr, ctx context.Context) {

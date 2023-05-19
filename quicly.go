@@ -13,7 +13,6 @@ import (
 )
 
 var logger log.Logger
-var opt Options
 
 func Initialize(options Options) int {
 	log.SetGlobalLevel(log.InfoLevel)
@@ -25,9 +24,7 @@ func Initialize(options Options) int {
 		logger = *options.Logger
 	}
 
-	opt = options
-
-	result := quiclylib.QuiclyInitializeEngine()
+	result := quiclylib.QuiclyInitializeEngine(options.CertificateFile, options.CertificateKey)
 	if result != errors.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
 		return result

@@ -13,10 +13,10 @@ const (
 	BUF_SIZE = 4096
 )
 
-func QuiclyInitializeEngine() int {
+func QuiclyInitializeEngine(certfile string, certkey string) int {
 	bindings.ResetRegistry()
 
-	result := bindings.QuiclyInitializeEngine()
+	result := bindings.QuiclyInitializeEngine(certfile, certkey)
 	return int(result)
 }
 

@@ -53,17 +53,14 @@ static quicly_stream_open_t stream_open = { on_stream_open };
 
 // ----- Startup ----- //
 
-int QuiclyInitializeEngine() {
-  printf("starting\n");
+int QuiclyInitializeEngine( const char* certificate_file, const char* key_file ) {
   WSADATA wsaData;
   WORD wVersionRequested = MAKEWORD(2, 2);
   int err = WSAStartup(wVersionRequested, &wsaData);
-  if( err != 0 ) {
+  if( err != 0 || certificate_file == NULL || strlen(certificate_file) == 0 ) {
       printf("WSAStartup failed with error: %d\n", err);
       return QUICLY_ERROR_FAILED;
   }
-
-  ptls_openssl_sign_certificate_t* sign_certificate = (ptls_openssl_sign_certificate_t*)malloc( sizeof(ptls_openssl_sign_certificate_t) );
 
 //  /* setup quic context */
   ctx = quicly_spec_context;
@@ -73,9 +70,13 @@ int QuiclyInitializeEngine() {
 
   // load certificate
   int ret;
-  if ((ret = ptls_load_certificates(&tlsctx, SERVER_CERT)) != 0) {
+  if ((ret = ptls_load_certificates(&tlsctx, certificate_file)) != 0) {
       fprintf(stderr, "failed to load certificates from file[%d]: %s\n", ret, ERR_error_string(ret, NULL));
       return QUICLY_ERROR_FAILED;
+  }
+
+  if( key_file == NULL || strlen(key_file) == 0 ) {
+    return QUICLY_OK;
   }
 
   // load private key and associate it to the certificate
@@ -90,6 +91,8 @@ int QuiclyInitializeEngine() {
       fprintf(stderr, "failed to load private key from file:%s\n", SERVER_KEY);
       exit(1);
   }
+
+  ptls_openssl_sign_certificate_t* sign_certificate = (ptls_openssl_sign_certificate_t*)malloc( sizeof(ptls_openssl_sign_certificate_t) );
   ptls_openssl_init_sign_certificate(sign_certificate, pkey);
   EVP_PKEY_free(pkey);
   tlsctx.sign_certificate = &sign_certificate->super;
