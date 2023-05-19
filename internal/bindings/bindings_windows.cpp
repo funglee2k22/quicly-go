@@ -54,7 +54,6 @@ static quicly_stream_open_t stream_open = { on_stream_open };
 // ----- Startup ----- //
 
 int QuiclyInitializeEngine() {
-#ifdef WIN32
   printf("starting\n");
   WSADATA wsaData;
   WORD wVersionRequested = MAKEWORD(2, 2);
@@ -63,7 +62,6 @@ int QuiclyInitializeEngine() {
       printf("WSAStartup failed with error: %d\n", err);
       return QUICLY_ERROR_FAILED;
   }
-#endif
 
   ptls_openssl_sign_certificate_t* sign_certificate = (ptls_openssl_sign_certificate_t*)malloc( sizeof(ptls_openssl_sign_certificate_t) );
 
@@ -105,11 +103,7 @@ int QuiclyInitializeEngine() {
 }
 
 int QuiclyCloseEngine() {
-#ifdef WIN32
-  printf("closing\n");
   WSACleanup();
-#endif
-
   return QUICLY_OK;
 }
 
