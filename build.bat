@@ -11,6 +11,10 @@ echo %BASEDIR%
 
 set /A BUILD="Debug"
 
+if "%1" EQU "--quic" (
+    goto quic
+)
+
 if "%1" EQU "--clean" (
     goto reset
 )
@@ -63,6 +67,7 @@ cmake --build . --target install
 if %ERRORLEVEL% NEQ 0 goto fail
 popd
 
+:quic
 echo [Build Quicly]
 pushd gen_quicly
 cmake ../deps/quicly -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/deps -DOPENSSL_ROOT_DIR=%BASEDIR%/internal/deps/include ^
