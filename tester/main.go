@@ -54,8 +54,18 @@ func main() {
 	ctx := context.Background()
 
 	if *clientFlag {
+		if len(options.CertificateFile) == 0 {
+			logger.Error().Msgf("Certificate file is necessary for client execution")
+			return
+		}
 		go runAsClient(ip, ctx)
+
 	} else {
+		if len(options.CertificateFile) == 0 || len(options.CertificateKey) == 0 {
+			logger.Error().Msgf("Certificate file and Key necessary for server execution")
+			return
+		}
+
 		go runAsServer(ip, ctx)
 	}
 
