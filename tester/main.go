@@ -69,6 +69,8 @@ func main() {
 }
 
 func runAsClient(ip *net.UDPAddr, ctx context.Context) {
+	logger.Info().Msgf("Starting as client")
+
 	c := quicly.Dial(ip, types.Callbacks{
 		OnConnectionOpen: func(conn types.Session) {
 			logger.Print("OnStart")
@@ -96,6 +98,8 @@ func runAsClient(ip *net.UDPAddr, ctx context.Context) {
 }
 
 func runAsServer(ip *net.UDPAddr, ctx context.Context) {
+	logger.Info().Msgf("Starting as server")
+
 	c := quicly.Listen(ip, types.Callbacks{
 		OnConnectionOpen: func(conn types.Session) {
 			logger.Print("OnStart")
@@ -134,7 +138,7 @@ func handleServerStream(stream net.Conn) {
 			}
 			continue
 		}
-		logger.Info().Msgf("Read: %n, %v\n", n, err, string(data[:n]))
+		logger.Info().Msgf("Read: %n, %v\n", n, string(data[:n]))
 
 		n, err = stream.Write(data[:n])
 		if err != nil {
@@ -161,6 +165,8 @@ func handleClientStream(stream net.Conn) {
 		}
 		logger.Info().Msgf("Write: %n, %v\n", n, err)
 
+		logger.Info().Msgf("SEND>> ")
+
 		data := make([]byte, 4096)
 		n, err = stream.Read(data)
 		if err != nil {
@@ -170,6 +176,6 @@ func handleClientStream(stream net.Conn) {
 			}
 			continue
 		}
-		logger.Info().Msgf("Read: %n, %v\n", n, err, string(data[:n]))
+		logger.Info().Msgf("Read: %n, %v\n", n, string(data[:n]))
 	}
 }
