@@ -8,14 +8,14 @@ GENERATOR:
     ConstCharIsString: true
   FlagGroups:
     - { name: LDFLAGS, flags: [
-      "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/lib/libquicly.a",
-      "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/lib/libcrypto.a",
-      "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/lib/libssl.a",
+      "<basedir>/internal/deps/lib/libquicly.a",
+      "<basedir>/internal/deps/lib/libcrypto.a",
+      "<basedir>/internal/deps/lib/libssl.a",
       "-lm",
       "-lmswsock",
       "-lws2_32" ] }
     - { name: CPPFLAGS, flags: [
-      "-IC:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/"
+      "-I<basedir>/internal/deps/include/"
     ] }
 
 PARSER:
@@ -25,7 +25,7 @@ PARSER:
     _WINDOWS: 1
     WIN32_LEAN_AND_MEAN: 1
   IncludePaths: [
-    "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/" ]
+    "<basedir>/internal/deps/include/" ]
   SourcesPaths: [
     "quicly.h",
     "quicly_wrapper.h",
@@ -38,12 +38,14 @@ TRANSLATOR:
     defines: eval
   Rules:
     global:
-      - { action: accept, from: "^iovec" }
+      - { action: accept, from: "^iovec$" }
       - { action: accept, from: "^size_t$" }
       - { action: accept, from: "^QUICLY_OK|QUICLY_ERROR_" }
       - { action: ignore, from: "goQuicly" }
       - { action: accept, from: "Quicly" }
       - { transform: export }
+  LenFields:
+    .iov_base: "iov_len"
   PtrTips:
     function:
       - { target: QuiclyConnect, tips: [ 0,0,ref ] }

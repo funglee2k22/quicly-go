@@ -189,13 +189,12 @@ func (x *Iovec) Deref() {
 	if x.ref4b778f8 == nil {
 		return
 	}
-	// << restore this part on regeneration it is not generated correctly
-	x.Iov_len = (Size_t)(x.ref4b778f8.iov_len)
 	hxfc4425b := (*sliceHeader)(unsafe.Pointer(&x.Iov_base))
 	hxfc4425b.Data = unsafe.Pointer(x.ref4b778f8.iov_base)
 	hxfc4425b.Cap = 0x7fffffff
-	hxfc4425b.Len = int(x.Iov_len)
-	// >> restore this part on regeneration it is not generated correctly
+	hxfc4425b.Len = int(x.ref4b778f8.iov_len)
+
+	x.Iov_len = (Size_t)(x.ref4b778f8.iov_len)
 }
 
 // safeString ensures that the string is NULL-terminated, a NULL-terminated copy is created otherwise.

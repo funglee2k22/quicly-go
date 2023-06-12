@@ -1,15 +1,15 @@
 
 @echo off
 
-echo ********************************
-echo *****    QUICLY-GO BUILD   *****
-echo ********************************
+echo *********************************************
+echo *****    QUICLY-GO DEPENDENCIES BUILD   *****
+echo *********************************************
 echo.
 
 set BASEDIR=%~dp0
 echo %BASEDIR%
 
-set /A BUILD="Debug"
+set /A BUILD="Release"
 
 if "%1" EQU "--quic" (
     goto quic
@@ -22,12 +22,12 @@ if "%2" EQU "--clean" (
     goto reset
 )
 
-if "%1" EQU "--release" (
-    set /A BUILD="Release"
+if "%1" EQU "--debug" (
+    set /A BUILD="Debug"
 )
 
 if "%1" EQU "--help" (
-    echo "Usage: build.bat [--release][--clean]"
+    echo "Usage: build.bat [--debug][--clean]"
     exit /B 1
 )
 

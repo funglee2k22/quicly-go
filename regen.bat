@@ -7,25 +7,24 @@ echo **************************************
 echo.
 
 set BASEDIR=%~dp0
-echo %BASEDIR%
 
 ECHO [Prerequisites check: C_FOR_GO]
-c_for_go.exe -h
+c-for-go.exe -h
 if %ERRORLEVEL% EQU 0 goto gen
 
 echo [Build C-FOR-GO]
 cd deps/c-for-go
-go build -v -o %BASEDIR%/c_for_go.exe
+go install -v github.com/Project-Faster/c-for-go
 if %ERRORLEVEL% NEQ 0 goto fail
 
 :gen
 cd %BASEDIR%
 echo [Regen Errors package]
-c_for_go.exe -nostamp -nocgo -debug -out quiclylib genspec\errors.yml
+c-for-go.exe -nostamp -nocgo -debug -path %BASEDIR% -out quiclylib genspec\errors.yml
 if %ERRORLEVEL% NEQ 0 goto fail
 
 echo [Regen Quicly Bindings package]
-c_for_go.exe -nostamp -debug -out internal genspec\bindings.yml
+c-for-go.exe -nostamp -debug -path %BASEDIR% -out internal genspec\bindings.yml
 if %ERRORLEVEL% NEQ 0 goto fail
 
 :ok
