@@ -14,7 +14,7 @@ function assert_errorcode() {
   fi
 }
 
-BASEDIR=$(basedir $0)
+BASEDIR=$(dirname $0)
 
 echo [Prerequisites check: C_FOR_GO]
 c-for-go -h
