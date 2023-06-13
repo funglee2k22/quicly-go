@@ -1,15 +1,15 @@
 #!/bin/bash
 
-echo *********************************************
-echo *****    QUICLY-GO DEPENDENCIES BUILD   *****
-echo *********************************************
+echo "*********************************************"
+echo "*****    QUICLY-GO DEPENDENCIES BUILD   *****"
+echo "*********************************************"
 echo
 
 function assert_errorcode() {
   if [[ ! "$?" -eq "0" ]]; then
-    echo ********************************
-    echo **** RESULT: FAILURE        ****
-    echo ********************************
+    echo "********************************"
+    echo "**** RESULT: FAILURE        ****"
+    echo "********************************"
     exit 1
   fi
 }
@@ -59,7 +59,7 @@ function build_openssl() {
 function build_quicly() {
   echo [Build Quicly]
   pushd gen_quicly
-  cmake ../deps/quicly -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DOPENSSL_ROOT_DIR=$BASEDIR/internal/deps/include ^
+  cmake ../deps/quicly -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DOPENSSL_ROOT_DIR=$BASEDIR/internal/deps/include \
                                            -DCMAKE_BUILD_TYPE=$BUILD -DWITH_EXAMPLE=OFF
   assert_errorcode
 
@@ -125,8 +125,8 @@ build_quicly
 assert_errorcode
 
 echo
-echo ***************************
-echo ****  RESULT: SUCCESS  ****
-echo ***************************
+echo "***************************"
+echo "****  RESULT: SUCCESS  ****"
+echo "***************************"
 cd $BASEDIR
 exit 0

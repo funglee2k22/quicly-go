@@ -14,7 +14,7 @@ if %ERRORLEVEL% EQU 0 goto gen
 
 echo [Build C-FOR-GO]
 cd deps/c-for-go
-go install -v github.com/Project-Faster/c-for-go
+go install -v
 if %ERRORLEVEL% NEQ 0 goto fail
 
 :gen
