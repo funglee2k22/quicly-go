@@ -5,7 +5,7 @@ GENERATOR:
   Includes: [ "quicly_wrapper.h" ]
   FlagGroups:
     - { name: CPPFLAGS, flags: [
-      "-IC:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/"
+      "-I<basedir>/internal/deps/include/"
     ] }
 
 PARSER:
@@ -15,7 +15,7 @@ PARSER:
     _WINDOWS: 1
     WIN32_LEAN_AND_MEAN: 1
   IncludePaths: [
-    "C:/home/dev/src/github.com/parvit/quicly-go/internal/deps/include/" ]
+    "<basedir>/internal/deps/include/" ]
   SourcesPaths: [
     "quicly_wrapper.h",
   ]

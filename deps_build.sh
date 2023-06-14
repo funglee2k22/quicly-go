@@ -85,7 +85,7 @@ function reset() {
   exit 0
 }
 
-BASEDIR=$(dirname $0)
+BASEDIR=$(dirname "$(realpath $0)")
 
 BUILD="Release"
 
