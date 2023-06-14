@@ -1,10 +1,9 @@
-[submodule "deps/quicly"]
-	path = deps/quicly
-	url = https://github.com/Project-Faster/quicly.git
-
 [submodule "deps/openssl"]
 	path = deps/openssl
 	url = https://github.com/Project-Faster/openssl-cmake.git
 [submodule "deps/c-for-go"]
 	path = deps/c-for-go
 	url = https://github.com/Project-Faster/c-for-go.git
+[submodule "deps/quicly"]
+	path = deps/quicly
+	url = https://github.com/Project-Faster/quicly.git
