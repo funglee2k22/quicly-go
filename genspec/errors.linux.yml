@@ -5,14 +5,14 @@ GENERATOR:
   Includes: [ "quicly_wrapper.h" ]
   FlagGroups:
     - { name: CPPFLAGS, flags: [
-      "-I<basedir>>/internal/deps/include/"
+      "-I<basedir>/internal/deps/include/"
     ] }
 
 PARSER:
   Defines:
     UNIX: 1
   IncludePaths: [
-    "<basedir>>/internal/deps/include/" ]
+    "<basedir>/internal/deps/include/" ]
   SourcesPaths: [
     "quicly_wrapper.h",
   ]
