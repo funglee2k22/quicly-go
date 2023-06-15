@@ -12,8 +12,7 @@ GENERATOR:
       "<basedir>/internal/deps/lib/libcrypto.a",
       "<basedir>/internal/deps/lib/libssl.a",
       "-lm",
-      "-lmswsock",
-      "-lws2_32" ] }
+      "-ldl" ] }
     - { name: CPPFLAGS, flags: [
       "-I<basedir>/internal/deps/include/"
     ] }

@@ -9,6 +9,8 @@ extern "C" {
   #include "picotls/openssl.h"
   #include "openssl/pem.h"
   #include "openssl/err.h"
+
+  #include <arpa/inet.h>
 }
 
 #define SERVER_CERT  "server_cert.pem"
