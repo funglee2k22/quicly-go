@@ -47,14 +47,6 @@ static quicly_stream_open_t stream_open = { on_stream_open };
 // ----- Startup ----- //
 
 int QuiclyInitializeEngine( const char* certificate_file, const char* key_file ) {
-  WSADATA wsaData;
-  WORD wVersionRequested = MAKEWORD(2, 2);
-  int err = WSAStartup(wVersionRequested, &wsaData);
-  if( err != 0 || certificate_file == NULL || strlen(certificate_file) == 0 ) {
-      printf("WSAStartup failed with error: %d\n", err);
-      return QUICLY_ERROR_FAILED;
-  }
-
 //  /* setup quic context */
   ctx = quicly_spec_context;
   ctx.tls = &tlsctx;

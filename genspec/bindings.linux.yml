@@ -14,6 +14,7 @@ GENERATOR:
       "-lm",
       "-ldl" ] }
     - { name: CPPFLAGS, flags: [
+      "-DUNIX",
       "-I<basedir>/internal/deps/include/"
     ] }
 
