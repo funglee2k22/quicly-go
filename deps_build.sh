@@ -38,8 +38,8 @@ function prepare() {
   git submodule update --init --recursive
 
   echo [Create gen directories]
-  mkdir gen_openssl
-  mkdir gen_quicly
+  mkdir -p gen_openssl
+  mkdir -p gen_quicly
 }
 
 function build_openssl() {
