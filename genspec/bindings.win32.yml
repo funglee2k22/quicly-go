@@ -15,6 +15,7 @@ GENERATOR:
       "-lmswsock",
       "-lws2_32" ] }
     - { name: CPPFLAGS, flags: [
+      "-DWIN32",
       "-I<basedir>/internal/deps/include/"
     ] }
 
