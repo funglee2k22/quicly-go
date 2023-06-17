@@ -18,12 +18,12 @@ BASEDIR=$(dirname "$(realpath $0)")
 
 echo [Prerequisites check: C_FOR_GO]
 c-for-go -h
-assert_errorcode
-
-echo [Build C-FOR-GO]
-cd deps/c-for-go
-go install -v
-assert_errorcode
+if [[ ! "$?" -eq "0" ]]; then
+  echo [Build C-FOR-GO]
+  cd deps/c-for-go
+  go install -v
+  assert_errorcode
+fi
 
 cd $BASEDIR
 echo [Regen Errors package]
