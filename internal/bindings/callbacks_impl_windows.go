@@ -83,5 +83,10 @@ func goQuiclyOnStreamReceived(conn_id C.uint64_t, stream_id C.uint64_t, data *C.
 	vIn.ref4b778f8 = data
 	vIn.Deref()
 
-	st.OnReceived(vIn.Iov_base, int(vIn.Iov_len))
+	buf := IovecToBytes(vIn)
+	st.OnReceived(buf, int(vIn.Iov_len))
+}
+
+func IovecToBytes(data Iovec) []byte {
+	return data.Iov_base
 }

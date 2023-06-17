@@ -123,7 +123,7 @@ func (s *QServerSession) connectionProcessHandler() {
 			s.Logger.Info().Msgf("OUT packet to %s:%d, of %d bytes", addr, port, packets_buf[i].Iov_len)
 
 			s.outgoingQueue = append(s.outgoingQueue, packet{
-				data:    packets_buf[i].Iov_base,
+				data:    bindings.IovecToBytes(packets_buf[i]),
 				dataLen: int(packets_buf[i].Iov_len),
 				addr:    returnAddr,
 			})
