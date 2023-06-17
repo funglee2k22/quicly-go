@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"sync"
+	"unsafe"
 )
 
 var connectionsRegistry map[uint64]types.Session
