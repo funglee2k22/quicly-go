@@ -26,6 +26,7 @@ PARSER:
   SourcesPaths: [
     "quicly.h",
     "quicly_wrapper.h",
+    "linuxcompat.h"
   ]
 
 TRANSLATOR:
