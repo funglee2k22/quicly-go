@@ -26,8 +26,6 @@ type QStream struct {
 	writeDeadline time.Time
 }
 
-var zeroTime = time.Time{}
-
 type timeoutErrorType struct{}
 
 func (e *timeoutErrorType) Error() string {
@@ -48,12 +46,14 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	if s.closed {
 		return 0, io.EOF
 	}
-	deadline := s.readDeadline
-	s.readDeadline = zeroTime
+	if s.readDeadline.IsZero() {
+		s.readDeadline = time.Now().Add(30 * time.Second)
+	}
+	defer func() {
+		s.readDeadline = time.Time{}
+	}()
 
-	first := true
-	for first || time.Now().After(deadline) {
-		first = false
+	for !time.Now().After(s.readDeadline) {
 		s.inQueueLock.Lock()
 		if len(s.packetInQueue) > 0 {
 			data, lenData := s.packetInQueue[0].data, s.packetInQueue[0].dataLen
@@ -73,14 +73,17 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 	if s.closed {
 		return 0, io.EOF
 	}
-	deadline := s.writeDeadline
-	s.writeDeadline = zeroTime
-
+	if s.writeDeadline.IsZero() {
+		s.writeDeadline = time.Now().Add(30 * time.Second)
+	}
+	defer func() {
+		s.writeDeadline = time.Time{}
+	}()
 	errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), b, bindings.Size_t(len(b)))
 	if errcode != qerrors.QUICLY_OK {
 		return 0, errors.New(fmt.Sprintf("quicly errorcode: %d", errcode))
 	}
-	if !deadline.IsZero() && time.Now().After(deadline) {
+	if time.Now().After(s.writeDeadline) {
 		return len(b), timeoutError
 	}
 	return len(b), nil

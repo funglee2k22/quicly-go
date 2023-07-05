@@ -64,18 +64,18 @@ func goQuiclyOnStreamClose(conn_id C.uint64_t, stream_id C.uint64_t, error C.int
 
 //export goQuiclyOnStreamReceived
 func goQuiclyOnStreamReceived(conn_id C.uint64_t, stream_id C.uint64_t, data *C.struct_iovec) {
-	fmt.Printf("received stream: %d %d\n", uint64(conn_id), uint64(stream_id))
-
 	callbackLock.Lock()
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 	callbackLock.Unlock()
 
 	if !ok {
+		fmt.Printf("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
 	st := conn.GetStream(uint64(stream_id))
 	if st == nil {
+		fmt.Printf("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 

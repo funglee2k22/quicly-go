@@ -49,20 +49,21 @@ func (s *QClientSession) connectionInHandler() {
 		}
 
 		n, addr, err := s.Conn.ReadFromUDP(buff)
-		if n == 0 || err != nil {
+		if n == 0 && err != nil {
 			<-time.After(1 * time.Millisecond)
 			continue
 		}
 
+		s.Logger.Info().Msgf("IN packet (%d,%v) from %v", n, buff[:n], addr.String())
 		s.inLock.Lock()
-		s.Logger.Info().Msgf("IN packet from %v", addr.String())
 		s.incomingQueue = append(s.incomingQueue, packet{
 			data:    buff[:n],
 			dataLen: n,
 			addr:    addr,
 		})
-		buff = make([]byte, BUF_SIZE)
 		s.inLock.Unlock()
+
+		buff = make([]byte, BUF_SIZE)
 	}
 }
 
@@ -97,6 +98,8 @@ func (s *QClientSession) connectionProcessHandler() {
 
 			var ptr_id bindings.Size_t = 0
 
+			s.Logger.Info().Msgf("QUICLY Received %d bytes", pkt.dataLen)
+
 			if bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
 				continue
 			}
@@ -112,6 +115,8 @@ func (s *QClientSession) connectionProcessHandler() {
 		if ret != bindings.QUICLY_OK || num_packets == 0 {
 			continue
 		}
+
+		s.Logger.Info().Msgf("OUT %d packets", num_packets)
 
 		addr, port := returnAddr.IP.String(), returnAddr.Port
 
