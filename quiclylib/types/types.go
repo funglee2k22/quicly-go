@@ -30,5 +30,7 @@ type Stream interface {
 
 	ID() uint64
 
+	OnOpened()
 	OnReceived([]byte, int)
+	OnClosed() error
 }

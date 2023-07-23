@@ -60,7 +60,7 @@ func (s *QServerSession) connectionInHandler() {
 		}
 
 		s.inLock.Lock()
-		s.Logger.Info().Msgf("IN packet from %v", addr.String())
+		s.Logger.Debug().Msgf("IN packet (%d) from %v", n, addr.String())
 		s.incomingQueue = append(s.incomingQueue, packet{
 			data:    buff[:n],
 			dataLen: n,

@@ -128,7 +128,6 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 
     if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
         return ret;
-    printf("echo.c@%d\n", __LINE__ );
     stream->callbacks = &stream_callbacks;
 
     // callback to go code
@@ -200,6 +199,13 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
       if( conns_table[i] == NULL )
         break;
     }
+    if( i > 255 )
+      return QUICLY_ERROR_FAILED;
+
+    ctx.transport_params.max_udp_payload_size = 8192;
+    ctx.transport_params.max_idle_timeout = 3 * 1000;
+    ctx.transport_params.max_streams_bidi = 256;
+
 
     /* initiate a connection, and open a stream */
     int ret = 0;
@@ -238,36 +244,50 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
       .sin_addr = byte_addr
     };
 
+    int err = QUICLY_OK;
+    quicly_decoded_packet_t* decoded = NULL;
     /* split UDP datagram into multiple QUIC packets */
     while (off < dgram_len) {
-        quicly_decoded_packet_t decoded;
-        if (quicly_decode_packet(&ctx, &decoded, (const uint8_t *)msg, dgram_len, &off) == SIZE_MAX)
-            return QUICLY_ERROR_FAILED;
+        free(decoded);
+        decoded = NULL;
+        decoded = (quicly_decoded_packet_t*)malloc( sizeof(quicly_decoded_packet_t) );
+
+        if (quicly_decode_packet(&ctx, decoded, (const uint8_t *)msg, dgram_len-off, &off) == SIZE_MAX) {
+            err = QUICLY_ERROR_FAILED;
+            break;
+        }
 
         /* find the corresponding connection */
         for (i = 0; i < 256 && conns_table[i] != NULL; ++i)
-            if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, &decoded)) {
+            if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, decoded)) {
                 break;
             }
+        if( i >= 256 ) {
+            err = QUICLY_ERROR_FAILED;
+        }
+
         int ret = 0;
         if (conns_table[i] != NULL) {
             /* let the current connection handle ingress packets */
-            ret = quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, &decoded);
+            ret = quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, decoded);
 
         } else if (!is_client) {
             if( id != NULL ) {
               *id = i;
             }
             /* assume that the packet is a new connection */
-            ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, &decoded, NULL, &next_cid, NULL, NULL);
+            ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, decoded, NULL, &next_cid, NULL, NULL);
         }
         if( ret != 0 ) {
           *id = 0;
-          return ret;
+          err = ret;
+          break;
         }
     }
+    free(decoded);
+    decoded = NULL;
 
-    return QUICLY_OK;
+    return err;
 }
 
 int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
@@ -275,18 +295,22 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
     quicly_address_t dest, src;
     uint8_t dgrams_buf[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
 
+    if( conns_table[id] == NULL ) {
+        return QUICLY_ERROR_FAILED;
+    }
+
     int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, sizeof(dgrams_buf));
 
     switch (ret) {
-//    case 0:
-//      break;
-      case 0: {
-          size_t j;
-          for (j = 0; j != *num_dgrams; ++j) {
-              //send_one(fd, &dest.sa, &dgrams[j]);
-              printf("packet %p %d\n", dgrams_out[j].iov_base, dgrams_out[j].iov_len);
-          }
-      } break;
+    case 0:
+      break;
+//      case 0: {
+//          size_t j;
+//          for (j = 0; j != *num_dgrams; ++j) {
+//              //send_one(fd, &dest.sa, &dgrams[j]);
+//              printf("packet %p %d\n", dgrams_out[j].iov_base, dgrams_out[j].iov_len);
+//          }
+//      } break;
     case QUICLY_ERROR_FREE_CONNECTION:
         /* connection has been closed, free, and exit when running as a client */
         quicly_free(conns_table[id]);

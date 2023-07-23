@@ -29,17 +29,21 @@ type QClientSession struct {
 	streamsLock sync.RWMutex
 
 	incomingQueue []packet
-	inLock        sync.Mutex
+	inLock        sync.RWMutex
 
 	outgoingQueue []packet
-	outLock       sync.Mutex
+	outLock       sync.RWMutex
 
 	dataQueue []packet
-	dataLock  sync.Mutex
+	dataLock  sync.RWMutex
 }
 
 func (s *QClientSession) connectionInHandler() {
-	var buff = make([]byte, BUF_SIZE)
+	var buffList = make([][]byte, 0, 512)
+	for i := 0; i < 512; i++ {
+		buffList = append(buffList, make([]byte, BUF_SIZE))
+	}
+
 	s.incomingQueue = make([]packet, 0, 512)
 	for {
 		select {
@@ -48,91 +52,112 @@ func (s *QClientSession) connectionInHandler() {
 		default:
 		}
 
-		n, addr, err := s.Conn.ReadFromUDP(buff)
-		if n == 0 && err != nil {
-			<-time.After(1 * time.Millisecond)
+		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
+		if n == 0 || (n == 0 && err != nil) {
+			<-time.After(100 * time.Microsecond)
 			continue
 		}
 
-		s.Logger.Info().Msgf("IN packet (%d,%v) from %v", n, buff[:n], addr.String())
+		buf := buffList[0]
+		buffList = buffList[1:]
+		if len(buffList) == 0 {
+			for i := 0; i < 512; i++ {
+				buffList = append(buffList, make([]byte, BUF_SIZE))
+			}
+		}
+
+		s.Logger.Debug().Msgf("QUICLY IN packet (%d) from %v", n, addr.String())
+
 		s.inLock.Lock()
 		s.incomingQueue = append(s.incomingQueue, packet{
-			data:    buff[:n],
+			data:    buf[:n],
 			dataLen: n,
 			addr:    addr,
 		})
 		s.inLock.Unlock()
-
-		buff = make([]byte, BUF_SIZE)
 	}
 }
 
 func (s *QClientSession) connectionProcessHandler() {
 	s.outgoingQueue = make([]packet, 0, 512)
 
-	var num_packets = bindings.Size_t(0)
-	var packets_buf = make([]bindings.Iovec, 10)
+	var num_packets = bindings.Size_t(128)
+	var packets_buf = make([]bindings.Iovec, 128)
 
 	for {
 		select {
 		case <-s.Ctx.Done():
 			return
+		case <-time.After(1 * time.Millisecond):
 		default:
 		}
 
 		var returnAddr *net.UDPAddr = nil
 
-		s.outLock.Lock()
-		if len(s.incomingQueue) == 0 {
-			s.outLock.Unlock()
-			retAddr := s.Conn.RemoteAddr()
-			returnAddr = retAddr.(*net.UDPAddr)
+		s.inLock.RLock()
+		emptyCheck := len(s.incomingQueue) == 0
+		s.inLock.RUnlock()
 
-		} else {
+		if !emptyCheck {
+			s.inLock.Lock()
 			pkt := s.incomingQueue[0]
 			s.incomingQueue = s.incomingQueue[1:]
-			s.outLock.Unlock()
+			s.inLock.Unlock()
 
 			returnAddr = pkt.addr
 			addr, port := pkt.Address()
+			if len(addr) == 0 || port == -1 {
+				s.Logger.Debug().Msgf("QUICLY Received %d bytes (dropped)", pkt.dataLen)
+				continue
+			}
 
 			var ptr_id bindings.Size_t = 0
 
-			s.Logger.Info().Msgf("QUICLY Received %d bytes", pkt.dataLen)
+			s.Logger.Debug().Msgf("QUICLY Received %d bytes", pkt.dataLen)
 
-			if bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id) != bindings.QUICLY_OK {
+			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
+			if err != bindings.QUICLY_OK {
+				if err != bindings.QUICLY_ERROR_PACKET_IGNORED {
+					s.Logger.Error().Msgf("QUICLY Received %d bytes (failed processing %v)", pkt.dataLen, err)
+				}
 				continue
 			}
 
 			s.id = uint64(ptr_id)
 			bindings.RegisterConnection(s, s.id)
+
+		} else {
+			retAddr := s.Conn.RemoteAddr()
+			returnAddr = retAddr.(*net.UDPAddr)
 		}
 
-		num_packets = bindings.Size_t(10)
-		packets_buf = make([]bindings.Iovec, 10)
+		num_packets = bindings.Size_t(128)
+		packets_buf = make([]bindings.Iovec, 128)
 
+		s.outLock.Lock()
 		var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
+		s.outLock.Unlock()
 		if ret != bindings.QUICLY_OK || num_packets == 0 {
 			continue
 		}
 
-		s.Logger.Info().Msgf("OUT %d packets", num_packets)
+		s.Logger.Debug().Msgf("QUICLY Sending %d packets", num_packets)
 
 		addr, port := returnAddr.IP.String(), returnAddr.Port
 
-		s.outLock.Lock()
 		for i := 0; i < int(num_packets); i++ {
+			s.outLock.Lock()
 			packets_buf[i].Deref() // realize the struct copy from C -> go
 
-			s.Logger.Info().Msgf("OUT packet to %s:%d, of %d bytes", addr, port, packets_buf[i].Iov_len)
+			s.Logger.Debug().Msgf("QUICLY OUT packet to %s:%d, of %d bytes", addr, port, packets_buf[i].Iov_len)
 
 			s.outgoingQueue = append(s.outgoingQueue, packet{
 				data:    bindings.IovecToBytes(packets_buf[i]),
 				dataLen: int(packets_buf[i].Iov_len),
-				addr:    nil,
+				addr:    returnAddr,
 			})
+			s.outLock.Unlock()
 		}
-		s.outLock.Unlock()
 	}
 }
 
@@ -142,16 +167,18 @@ func (s *QClientSession) connectionOutHandler() {
 		select {
 		case <-s.Ctx.Done():
 			return
+		case <-time.After(1 * time.Millisecond):
 		default:
 		}
 
-		s.outLock.Lock()
-		if len(s.outgoingQueue) == 0 {
-			s.outLock.Unlock()
-			<-time.After(1 * time.Millisecond)
+		s.outLock.RLock()
+		emptyCheck := len(s.outgoingQueue) == 0
+		s.outLock.RUnlock()
+		if emptyCheck {
 			continue
 		}
 
+		s.outLock.Lock()
 		var backupQueue = s.outgoingQueue
 		s.outgoingQueue = msgQueue
 		msgQueue = backupQueue
@@ -159,7 +186,8 @@ func (s *QClientSession) connectionOutHandler() {
 
 		for len(msgQueue) >= 1 {
 			n, err := s.Conn.Write(msgQueue[0].data)
-			s.Logger.Info().Msgf("SEND packet of len %d to %v [%d:%v]", msgQueue[0].dataLen, msgQueue[0].addr.String(), n, err)
+			s.Logger.Debug().Msgf("SEND packet of len %d to %v [%v][%d]", msgQueue[0].dataLen, msgQueue[0].addr.String(),
+				err, n)
 			msgQueue = msgQueue[1:]
 		}
 	}
@@ -174,11 +202,14 @@ func (s *QClientSession) Accept() (net.Conn, error) {
 }
 
 func (s *QClientSession) Close() error {
-	if !s.connected || s.Conn == nil {
+	if !s.connected || s == nil || s.Conn == nil {
 		return nil
 	}
 	if s.OnConnectionClose != nil {
+		s.Logger.Debug().Msgf("Close connection: %d\n", s.id)
+		s.outLock.Lock()
 		s.OnConnectionClose(s)
+		s.outLock.Unlock()
 	}
 	bindings.RemoveConnection(s.id)
 	return nil
@@ -236,10 +267,13 @@ func (s *QClientSession) OpenStream() types.Stream {
 		session: s,
 		conn:    s.Conn,
 		id:      streamId,
+		Logger:  s.Logger,
 	}
+	st.closed.Store(false)
+
 	s.streamsLock.Lock()
+	defer s.streamsLock.Unlock()
 	s.streams[streamId] = st
-	s.streamsLock.Unlock()
 
 	return st
 }
@@ -260,19 +294,25 @@ func (s *QClientSession) OnStreamOpen(streamId uint64) {
 	s.streamsLock.Unlock()
 	if ok {
 		s.OnStreamOpenCallback(st)
+		st.OnOpened()
 	}
 }
 
 func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
+	s.Logger.Info().Msgf("On close stream: %d\n", streamId)
+
 	if s.OnStreamCloseCallback == nil {
 		return
 	}
 
 	s.streamsLock.Lock()
 	st, ok := s.streams[streamId]
+	delete(s.streams, streamId)
 	s.streamsLock.Unlock()
+
 	if ok {
 		s.OnStreamCloseCallback(st, error)
+		_ = st.OnClosed()
 	}
 }
 
