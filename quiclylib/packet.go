@@ -6,14 +6,14 @@ import (
 )
 
 type packet struct {
-	data    []byte
-	dataLen int
-	addr    *net.UDPAddr
-	counter int
+	streamid uint64
+	data     []byte
+	dataLen  int
+	addr     *net.UDPAddr
 }
 
 func (p *packet) Address() (string, int) {
-	if p.addr == nil {
+	if p == nil || p.addr == nil {
 		return "", -1
 	}
 	return p.addr.IP.String(), p.addr.Port

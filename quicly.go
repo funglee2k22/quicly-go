@@ -49,7 +49,7 @@ func Listen(localAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) typ
 	conn := &quiclylib.QServerSession{
 		Conn:      udpConn,
 		Ctx:       ctx,
-		Logger:    logger,
+		Logger:    logger.With().Timestamp().Logger(),
 		Callbacks: cb,
 	}
 
@@ -66,7 +66,7 @@ func Dial(remoteAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) type
 	conn := &quiclylib.QClientSession{
 		Conn:      udpConn,
 		Ctx:       ctx,
-		Logger:    logger,
+		Logger:    logger.With().Timestamp().Logger(),
 		Callbacks: cb,
 	}
 

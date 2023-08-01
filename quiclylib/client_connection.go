@@ -8,187 +8,203 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 )
 
 type QClientSession struct {
 	// exported fields
-	Conn   *net.UDPConn
-	Ctx    context.Context
-	Logger log.Logger
+	Conn          *net.UDPConn
+	Ctx           context.Context
+	Logger        log.Logger
+	OutgoingQueue chan *packet
 
 	// callback
 	types.Callbacks
 
 	// unexported fields
-	id        uint64
-	connected bool
+	id             uint64
+	connected      bool
+	ctxCancel      context.CancelFunc
+	handlersWaiter sync.WaitGroup
 
 	streams     map[uint64]types.Stream
 	streamsLock sync.RWMutex
 
-	incomingQueue []packet
-	inLock        sync.RWMutex
+	incomingQueue chan *packet
+}
 
-	outgoingQueue []packet
-	outLock       sync.RWMutex
+func (s *QClientSession) init() {
+	if s.incomingQueue == nil {
+		s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
-	dataQueue []packet
-	dataLock  sync.RWMutex
+		s.incomingQueue = make(chan *packet, 1024)
+		s.OutgoingQueue = make(chan *packet, 1024)
+		s.streams = make(map[uint64]types.Stream)
+	}
 }
 
 func (s *QClientSession) connectionInHandler() {
-	var buffList = make([][]byte, 0, 512)
-	for i := 0; i < 512; i++ {
-		buffList = append(buffList, make([]byte, BUF_SIZE))
+	var starttime = time.Now()
+	defer func() {
+		s.handlersWaiter.Done()
+		s.Logger.Error().Msgf("[%v] in handler context done", s.id)
+	}()
+
+	var buffList = make([][]byte, 0, 128)
+	for i := 0; i < 128; i++ {
+		buffList = append(buffList, make([]byte, READ_SIZE))
 	}
 
-	s.incomingQueue = make([]packet, 0, 512)
 	for {
 		select {
 		case <-s.Ctx.Done():
 			return
-		default:
+		case <-time.After(1 * time.Millisecond):
+			break
 		}
 
+		s.Logger.Debug().Msgf("[%v] UDP packet", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
-			<-time.After(100 * time.Microsecond)
+			s.Logger.Debug().Msgf("QUICLY No packet")
 			continue
 		}
 
 		buf := buffList[0]
 		buffList = buffList[1:]
 		if len(buffList) == 0 {
-			for i := 0; i < 512; i++ {
-				buffList = append(buffList, make([]byte, BUF_SIZE))
+			for i := 0; i < 128; i++ {
+				buffList = append(buffList, make([]byte, READ_SIZE))
 			}
 		}
 
-		s.Logger.Debug().Msgf("QUICLY IN packet (%d) from %v", n, addr.String())
-
-		s.inLock.Lock()
-		s.incomingQueue = append(s.incomingQueue, packet{
+		s.Logger.Debug().Msgf("[%v] Handle IN: %v", s.id, starttime)
+		pkt := &packet{
 			data:    buf[:n],
 			dataLen: n,
 			addr:    addr,
-		})
-		s.inLock.Unlock()
+		}
+		select {
+		case s.incomingQueue <- pkt:
+			break
+		case <-time.After(1 * time.Second):
+			break
+		}
 	}
 }
 
 func (s *QClientSession) connectionProcessHandler() {
-	s.outgoingQueue = make([]packet, 0, 512)
-
-	var num_packets = bindings.Size_t(128)
-	var packets_buf = make([]bindings.Iovec, 128)
+	var starttime = time.Now()
+	returnAddr := s.Conn.RemoteAddr().(*net.UDPAddr)
+	defer func() {
+		s.handlersWaiter.Done()
+		s.Logger.Error().Msgf("[%v] process handler context done", s.id)
+	}()
 
 	for {
 		select {
 		case <-s.Ctx.Done():
 			return
-		case <-time.After(1 * time.Millisecond):
-		default:
-		}
-
-		var returnAddr *net.UDPAddr = nil
-
-		s.inLock.RLock()
-		emptyCheck := len(s.incomingQueue) == 0
-		s.inLock.RUnlock()
-
-		if !emptyCheck {
-			s.inLock.Lock()
-			pkt := s.incomingQueue[0]
-			s.incomingQueue = s.incomingQueue[1:]
-			s.inLock.Unlock()
-
-			returnAddr = pkt.addr
+		case pkt := <-s.incomingQueue:
+			if pkt == nil {
+				break
+			}
 			addr, port := pkt.Address()
 			if len(addr) == 0 || port == -1 {
-				s.Logger.Debug().Msgf("QUICLY Received %d bytes (dropped)", pkt.dataLen)
-				continue
+				addr, port = returnAddr.IP.String(), returnAddr.Port
 			}
 
 			var ptr_id bindings.Size_t = 0
 
-			s.Logger.Debug().Msgf("QUICLY Received %d bytes", pkt.dataLen)
+			s.Logger.Debug().Msgf("[%v] Handle PROC: %v ()", s.id, starttime, pkt.dataLen)
 
 			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
 			if err != bindings.QUICLY_OK {
-				if err != bindings.QUICLY_ERROR_PACKET_IGNORED {
-					s.Logger.Error().Msgf("QUICLY Received %d bytes (failed processing %v)", pkt.dataLen, err)
+				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
+					s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.dataLen, err)
+				} else {
+					s.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", s.id, pkt.dataLen, err)
 				}
-				continue
 			}
 
 			s.id = uint64(ptr_id)
 			bindings.RegisterConnection(s, s.id)
+			break
 
-		} else {
-			retAddr := s.Conn.RemoteAddr()
-			returnAddr = retAddr.(*net.UDPAddr)
+		case <-time.After(1 * time.Millisecond):
+			break
 		}
 
-		num_packets = bindings.Size_t(128)
-		packets_buf = make([]bindings.Iovec, 128)
+		num_packets := bindings.Size_t(32)
+		packets_buf := make([]bindings.Iovec, 32)
 
-		s.outLock.Lock()
 		var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
-		s.outLock.Unlock()
+
 		if ret != bindings.QUICLY_OK || num_packets == 0 {
+			s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
 			continue
 		}
 
-		s.Logger.Debug().Msgf("QUICLY Sending %d packets", num_packets)
-
-		addr, port := returnAddr.IP.String(), returnAddr.Port
-
 		for i := 0; i < int(num_packets); i++ {
-			s.outLock.Lock()
 			packets_buf[i].Deref() // realize the struct copy from C -> go
 
-			s.Logger.Debug().Msgf("QUICLY OUT packet to %s:%d, of %d bytes", addr, port, packets_buf[i].Iov_len)
+			data := bindings.IovecToBytes(packets_buf[i])
 
-			s.outgoingQueue = append(s.outgoingQueue, packet{
-				data:    bindings.IovecToBytes(packets_buf[i]),
-				dataLen: int(packets_buf[i].Iov_len),
-				addr:    returnAddr,
-			})
-			s.outLock.Unlock()
+			n, err := s.Conn.Write(data)
+			s.Logger.Debug().Msgf("[%v] Handle PROC: %v ()", s.id, starttime, n)
+			s.Logger.Debug().Msgf("SEND packet of len %d [%v]: %v", n, err, data)
 		}
 	}
 }
 
-func (s *QClientSession) connectionOutHandler() {
-	var msgQueue = make([]packet, 0, 512)
+func (s *QClientSession) connectionWriteHandler() {
+	var starttime = time.Now()
+	defer func() {
+		s.handlersWaiter.Done()
+		s.Logger.Error().Msgf("[%v] write handler context done", s.id)
+	}()
+
 	for {
 		select {
 		case <-s.Ctx.Done():
 			return
-		case <-time.After(1 * time.Millisecond):
-		default:
-		}
+		case pkt := <-s.OutgoingQueue:
+			if pkt == nil {
+				continue
+			}
+			s.Logger.Debug().Msgf("[%v] Handle OUT: %v", s.id, starttime)
+			s.Logger.Debug().Msgf("STREAM WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
 
-		s.outLock.RLock()
-		emptyCheck := len(s.outgoingQueue) == 0
-		s.outLock.RUnlock()
-		if emptyCheck {
+			errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(pkt.streamid), pkt.data, bindings.Size_t(pkt.dataLen))
+			if errcode != errors.QUICLY_OK {
+				s.Logger.Error().Msgf("%v quicly errorcode: %d", s.id, errcode)
+				continue
+			}
+
+			num_packets := bindings.Size_t(32)
+			packets_buf := make([]bindings.Iovec, 32)
+
+			var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
+
+			if ret != bindings.QUICLY_OK || num_packets == 0 {
+				s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
+				continue
+			}
+
+			for i := 0; i < int(num_packets); i++ {
+				packets_buf[i].Deref() // realize the struct copy from C -> go
+
+				data := bindings.IovecToBytes(packets_buf[i])
+
+				n, err := s.Conn.Write(data)
+				s.Logger.Debug().Msgf("[%v] Handle PROC: %v ()", s.id, starttime, n)
+				s.Logger.Debug().Msgf("SEND packet of len %d [%v]: %v", n, err, data)
+			}
 			continue
-		}
-
-		s.outLock.Lock()
-		var backupQueue = s.outgoingQueue
-		s.outgoingQueue = msgQueue
-		msgQueue = backupQueue
-		s.outLock.Unlock()
-
-		for len(msgQueue) >= 1 {
-			n, err := s.Conn.Write(msgQueue[0].data)
-			s.Logger.Debug().Msgf("SEND packet of len %d to %v [%v][%d]", msgQueue[0].dataLen, msgQueue[0].addr.String(),
-				err, n)
-			msgQueue = msgQueue[1:]
+		case <-time.After(1 * time.Second):
+			break
 		}
 	}
 }
@@ -205,12 +221,19 @@ func (s *QClientSession) Close() error {
 	if !s.connected || s == nil || s.Conn == nil {
 		return nil
 	}
+	s.Logger.Info().Msgf("== Connection %v WaitEnd ==\"", s.id)
+	defer s.Logger.Info().Msgf("== Connection %v End ==\"", s.id)
+
+	s.ctxCancel()
+	close(s.incomingQueue)
+	close(s.OutgoingQueue)
+	_ = s.Conn.Close()
+
 	if s.OnConnectionClose != nil {
 		s.Logger.Debug().Msgf("Close connection: %d\n", s.id)
-		s.outLock.Lock()
 		s.OnConnectionClose(s)
-		s.outLock.Unlock()
 	}
+	s.handlersWaiter.Wait()
 	bindings.RemoveConnection(s.id)
 	return nil
 }
@@ -224,7 +247,7 @@ func (s *QClientSession) connect() int {
 		return errors.QUICLY_OK
 	}
 
-	s.streams = make(map[uint64]types.Stream)
+	s.init()
 
 	var ptr_id bindings.Size_t = 0
 
@@ -239,9 +262,13 @@ func (s *QClientSession) connect() int {
 
 	s.connected = true
 
-	go s.connectionInHandler()
+	for i := 0; i < runtime.NumCPU(); i++ {
+		s.handlersWaiter.Add(2)
+		go s.connectionInHandler()
+		go s.connectionWriteHandler()
+	}
+	s.handlersWaiter.Add(1)
 	go s.connectionProcessHandler()
-	go s.connectionOutHandler()
 
 	if s.OnConnectionOpen != nil {
 		s.OnConnectionOpen(s)
@@ -279,8 +306,8 @@ func (s *QClientSession) OpenStream() types.Stream {
 }
 
 func (s *QClientSession) GetStream(id uint64) types.Stream {
-	s.streamsLock.Lock()
-	defer s.streamsLock.Unlock()
+	s.streamsLock.RLock()
+	defer s.streamsLock.RUnlock()
 	return s.streams[id]
 }
 
@@ -289,9 +316,9 @@ func (s *QClientSession) OnStreamOpen(streamId uint64) {
 		return
 	}
 
-	s.streamsLock.Lock()
+	s.streamsLock.RLock()
 	st, ok := s.streams[streamId]
-	s.streamsLock.Unlock()
+	s.streamsLock.RUnlock()
 	if ok {
 		s.OnStreamOpenCallback(st)
 		st.OnOpened()
@@ -305,10 +332,10 @@ func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
 		return
 	}
 
-	s.streamsLock.Lock()
+	s.streamsLock.RLock()
 	st, ok := s.streams[streamId]
 	delete(s.streams, streamId)
-	s.streamsLock.Unlock()
+	s.streamsLock.RUnlock()
 
 	if ok {
 		s.OnStreamCloseCallback(st, error)
@@ -317,3 +344,5 @@ func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
 }
 
 var _ net.Listener = &QClientSession{}
+
+var _ types.Session = &QClientSession{}
