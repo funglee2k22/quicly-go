@@ -46,6 +46,7 @@ func (s *QStream) init() {
 	if s.streamBuf == nil {
 		s.streamBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.bufferUpdateCh = make(chan struct{}, 512)
+		go s.channelsWatcher()
 	}
 }
 
@@ -58,6 +59,19 @@ func (s *QStream) IsClosed() bool {
 }
 
 var zeroTime = time.Time{}
+
+func (s *QStream) channelsWatcher() {
+	var client, _ = s.session.(*QClientSession)
+	for {
+		select {
+		case <-client.Ctx.Done():
+			return
+		case <-time.After(250 * time.Millisecond):
+			break
+		}
+		s.Logger.Info().Msgf("[stream:%v] in:%d buf:%d", s.id, len(s.bufferUpdateCh), s.streamBuf.Len())
+	}
+}
 
 func (s *QStream) Read(b []byte) (n int, err error) {
 	s.init()

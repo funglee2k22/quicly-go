@@ -42,6 +42,20 @@ func (s *QClientSession) init() {
 		s.incomingQueue = make(chan *packet, 1024)
 		s.OutgoingQueue = make(chan *packet, 1024)
 		s.streams = make(map[uint64]types.Stream)
+
+		go s.channelsWatcher()
+	}
+}
+
+func (s *QClientSession) channelsWatcher() {
+	for {
+		select {
+		case <-s.Ctx.Done():
+			return
+		case <-time.After(250 * time.Millisecond):
+			break
+		}
+		s.Logger.Info().Msgf("[conn:%v] in:%d out:%d str:%d", s.id, len(s.incomingQueue), len(s.OutgoingQueue), len(s.streams))
 	}
 }
 
