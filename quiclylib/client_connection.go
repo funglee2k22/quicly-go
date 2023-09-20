@@ -15,10 +15,9 @@ import (
 
 type QClientSession struct {
 	// exported fields
-	Conn          *net.UDPConn
-	Ctx           context.Context
-	Logger        log.Logger
-	OutgoingQueue chan *packet
+	Conn   *net.UDPConn
+	Ctx    context.Context
+	Logger log.Logger
 
 	// callback
 	types.Callbacks
@@ -34,6 +33,7 @@ type QClientSession struct {
 
 	exclusiveLock sync.RWMutex
 
+	OutgoingQueue chan *packet
 	incomingQueue chan *packet
 }
 
