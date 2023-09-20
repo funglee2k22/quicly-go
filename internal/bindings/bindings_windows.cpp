@@ -313,11 +313,12 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
 //      } break;
     case QUICLY_ERROR_FREE_CONNECTION:
         /* connection has been closed, free, and exit when running as a client */
+        printf("quicly_send returned %d, QUICLY_ERROR_FREE_CONNECTION\n", ret);
         quicly_free(conns_table[id]);
         conns_table[id] = NULL;
         break;
     default:
-        fprintf(stderr, "quicly_send returned %d\n", ret);
+        printf("quicly_send returned %d\n", ret);
         return QUICLY_ERROR_FAILED;
     }
 

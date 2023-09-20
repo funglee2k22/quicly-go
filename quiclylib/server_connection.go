@@ -44,7 +44,7 @@ func (s *QServerSession) ID() uint64 {
 }
 
 func (s *QServerSession) connectionInHandler() {
-	var buff = make([]byte, BUF_SIZE)
+	var buff = make([]byte, READ_SIZE)
 	s.incomingQueue = make([]packet, 0, 512)
 	for {
 		select {
@@ -66,7 +66,7 @@ func (s *QServerSession) connectionInHandler() {
 			dataLen: n,
 			addr:    addr,
 		})
-		buff = make([]byte, BUF_SIZE)
+		buff = make([]byte, READ_SIZE)
 		s.inLock.Unlock()
 	}
 }
@@ -154,7 +154,7 @@ func (s *QServerSession) connectionOutHandler() {
 		s.outLock.Unlock()
 
 		for len(msgQueue) >= 1 {
-			s.Logger.Info().Msgf("SEND packet of len %d to %v", msgQueue[0].dataLen, msgQueue[0].addr.String())
+			s.Logger.Debug().Msgf("SEND packet of len %d to %v", msgQueue[0].dataLen, msgQueue[0].addr.String())
 			s.Conn.WriteToUDP(msgQueue[0].data, msgQueue[0].addr)
 			msgQueue = msgQueue[1:]
 		}

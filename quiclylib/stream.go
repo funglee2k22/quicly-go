@@ -22,10 +22,14 @@ type QStream struct {
 
 	bufferUpdateCh chan struct{}
 	inBufferLock   sync.Mutex
-	streamBuf      *bytes.Buffer
+	streamInBuf    *bytes.Buffer
+	outBufferLock  sync.Mutex
+	streamOutBuf   *bytes.Buffer
 
 	readDeadline  time.Time
 	writeDeadline time.Time
+
+	lastWrite time.Time
 
 	Logger log.Logger
 }
@@ -43,8 +47,9 @@ func (e *timeoutErrorType) Timeout() bool {
 var timeoutError = &timeoutErrorType{}
 
 func (s *QStream) init() {
-	if s.streamBuf == nil {
-		s.streamBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
+	if s.streamInBuf == nil {
+		s.streamInBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
+		s.streamOutBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.bufferUpdateCh = make(chan struct{}, 512)
 		go s.channelsWatcher()
 	}
@@ -61,15 +66,9 @@ func (s *QStream) IsClosed() bool {
 var zeroTime = time.Time{}
 
 func (s *QStream) channelsWatcher() {
-	var client, _ = s.session.(*QClientSession)
 	for {
-		select {
-		case <-client.Ctx.Done():
-			return
-		case <-time.After(250 * time.Millisecond):
-			break
-		}
-		s.Logger.Info().Msgf("[stream:%v] in:%d buf:%d", s.id, len(s.bufferUpdateCh), s.streamBuf.Len())
+		<-time.After(5 * time.Millisecond)
+		s.Logger.Debug().Msgf("[stream:%v] in:%d buf:%d", s.id, len(s.bufferUpdateCh), s.streamInBuf.Len())
 	}
 }
 
@@ -86,25 +85,25 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	select {
 	case <-s.bufferUpdateCh:
 		s.inBufferLock.Lock()
-		wr, _ := s.streamBuf.Read(b)
-		s.Logger.Debug().Msgf("STREAM IN %d BUFF READ: %d", s.id, wr)
+		wr, _ := s.streamInBuf.Read(b)
+		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
 		s.inBufferLock.Unlock()
 		return wr, nil
 
 	case <-time.After(time.Until(s.readDeadline)):
 		s.inBufferLock.Lock()
-		wr, _ := s.streamBuf.Read(b)
-		s.Logger.Debug().Msgf("STREAM IN %d BUFF READ: %d", s.id, wr)
+		wr, _ := s.streamInBuf.Read(b)
+		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
 		s.inBufferLock.Unlock()
 		if wr > 0 {
 			return wr, nil
 		}
 
-		if s.IsClosed() && s.streamBuf.Len() == 0 {
-			s.Logger.Debug().Msgf("STREAM IN %d CLOSE", s.id)
+		if s.IsClosed() && s.streamInBuf.Len() == 0 {
+			s.Logger.Debug().Msgf("STREAM READ %d CLOSE", s.id)
 			return 0, io.EOF
 		}
-		s.Logger.Debug().Msgf("STREAM IN %d TIMEOUT", s.id)
+		s.Logger.Debug().Msgf("STREAM READ %d TIMEOUT", s.id)
 		return 0, nil
 	}
 }
@@ -123,28 +122,25 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 		s.writeDeadline = zeroTime
 	}()
 
+	s.outBufferLock.Lock()
+	wr, _ := s.streamOutBuf.Write(b)
+	s.outBufferLock.Unlock()
+
+	s.Logger.Debug().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
+
+	s.lastWrite = time.Now()
 	var client, _ = s.session.(*QClientSession)
 	pkt := &packet{
 		streamid: s.id,
-		data:     b,
-		dataLen:  len(b),
 	}
-	select {
-	case client.OutgoingQueue <- pkt:
-		break
-	case <-time.After(1 * time.Millisecond):
-		return len(b), timeoutError
-	}
-
-	s.Logger.Debug().Msgf("STREAM OUT %d: %d", s.id, len(b))
-	return len(b), nil
+	client.OutgoingQueue <- pkt
+	return wr, nil
 }
 
 func (s *QStream) Close() error {
 	if s.IsClosed() {
 		return nil
 	}
-	s.Logger.Debug().Msgf("STREAM CLOSE %d", s.id)
 	s.closed.Store(true)
 	bindings.QuiclyCloseStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), int32(0))
 	return nil
@@ -153,7 +149,9 @@ func (s *QStream) Close() error {
 func (s *QStream) OnOpened() {}
 
 func (s *QStream) OnClosed() error {
-	return s.Close()
+	s.Logger.Debug().Msgf("STREAM CLOSE %d", s.id)
+	s.closed.Store(true)
+	return nil
 }
 
 var receivedCounter = 0
@@ -164,21 +162,20 @@ func (s *QStream) OnReceived(data []byte, dataLen int) {
 	if s.IsClosed() || dataLen == 0 {
 		return
 	}
+
 	s.inBufferLock.Lock()
+	s.streamInBuf.Write(data[:dataLen])
 	s.inBufferLock.Unlock()
 
-	s.streamBuf.Write(data[:dataLen])
-	s.Logger.Debug().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamBuf.Len(), READ_SIZE)
+	s.Logger.Debug().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
 
 	receivedCounter++
 
-	if s.streamBuf.Len() >= BUF_SIZE {
-		select {
-		case s.bufferUpdateCh <- struct{}{}:
-			break
-		case <-time.After(100 * time.Millisecond):
-			break
-		}
+	select {
+	case s.bufferUpdateCh <- struct{}{}:
+		break
+	case <-time.After(100 * time.Millisecond):
+		break
 	}
 }
 

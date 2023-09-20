@@ -32,6 +32,8 @@ type QClientSession struct {
 	streams     map[uint64]types.Stream
 	streamsLock sync.RWMutex
 
+	exclusiveLock sync.RWMutex
+
 	incomingQueue chan *packet
 }
 
@@ -60,10 +62,9 @@ func (s *QClientSession) channelsWatcher() {
 }
 
 func (s *QClientSession) connectionInHandler() {
-	var starttime = time.Now()
 	defer func() {
+		_ = recover()
 		s.handlersWaiter.Done()
-		s.Logger.Error().Msgf("[%v] in handler context done", s.id)
 	}()
 
 	var buffList = make([][]byte, 0, 128)
@@ -94,7 +95,6 @@ func (s *QClientSession) connectionInHandler() {
 			}
 		}
 
-		s.Logger.Debug().Msgf("[%v] Handle IN: %v", s.id, starttime)
 		pkt := &packet{
 			data:    buf[:n],
 			dataLen: n,
@@ -103,24 +103,21 @@ func (s *QClientSession) connectionInHandler() {
 		select {
 		case s.incomingQueue <- pkt:
 			break
-		case <-time.After(1 * time.Second):
+		case <-time.After(100 * time.Millisecond):
 			break
 		}
 	}
 }
 
 func (s *QClientSession) connectionProcessHandler() {
-	var starttime = time.Now()
 	returnAddr := s.Conn.RemoteAddr().(*net.UDPAddr)
 	defer func() {
+		_ = recover()
 		s.handlersWaiter.Done()
-		s.Logger.Error().Msgf("[%v] process handler context done", s.id)
 	}()
 
 	for {
 		select {
-		case <-s.Ctx.Done():
-			return
 		case pkt := <-s.incomingQueue:
 			if pkt == nil {
 				break
@@ -131,8 +128,6 @@ func (s *QClientSession) connectionProcessHandler() {
 			}
 
 			var ptr_id bindings.Size_t = 0
-
-			s.Logger.Debug().Msgf("[%v] Handle PROC: %v ()", s.id, starttime, pkt.dataLen)
 
 			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
 			if err != bindings.QUICLY_OK {
@@ -147,79 +142,79 @@ func (s *QClientSession) connectionProcessHandler() {
 			bindings.RegisterConnection(s, s.id)
 			break
 
-		case <-time.After(1 * time.Millisecond):
+		case <-s.Ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
 			break
 		}
 
-		num_packets := bindings.Size_t(32)
-		packets_buf := make([]bindings.Iovec, 32)
-
-		var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
-
-		if ret != bindings.QUICLY_OK || num_packets == 0 {
-			s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
-			continue
-		}
-
-		for i := 0; i < int(num_packets); i++ {
-			packets_buf[i].Deref() // realize the struct copy from C -> go
-
-			data := bindings.IovecToBytes(packets_buf[i])
-
-			n, err := s.Conn.Write(data)
-			s.Logger.Debug().Msgf("[%v] Handle PROC: %v ()", s.id, starttime, n)
-			s.Logger.Debug().Msgf("SEND packet of len %d [%v]: %v", n, err, data)
-		}
+		s.flushOutgoingQueue()
 	}
 }
 
 func (s *QClientSession) connectionWriteHandler() {
-	var starttime = time.Now()
 	defer func() {
+		_ = recover()
 		s.handlersWaiter.Done()
-		s.Logger.Error().Msgf("[%v] write handler context done", s.id)
 	}()
 
 	for {
 		select {
-		case <-s.Ctx.Done():
-			return
 		case pkt := <-s.OutgoingQueue:
 			if pkt == nil {
 				continue
 			}
-			s.Logger.Debug().Msgf("[%v] Handle OUT: %v", s.id, starttime)
-			s.Logger.Debug().Msgf("STREAM WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
+			//s.Logger.Info().Msgf("STREAM WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
 
-			errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(pkt.streamid), pkt.data, bindings.Size_t(pkt.dataLen))
+			s.streamsLock.RLock()
+			var stream, _ = s.streams[pkt.streamid].(*QStream)
+			s.streamsLock.RUnlock()
+
+			stream.outBufferLock.Lock()
+			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
+			s.Logger.Info().Msgf("STREAM WRITE %d: %d", pkt.streamid, len(data))
+
+			stream.streamOutBuf.Reset()
+			stream.outBufferLock.Unlock()
+
+			errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(pkt.streamid), data, bindings.Size_t(len(data)))
 			if errcode != errors.QUICLY_OK {
 				s.Logger.Error().Msgf("%v quicly errorcode: %d", s.id, errcode)
 				continue
 			}
-
-			num_packets := bindings.Size_t(32)
-			packets_buf := make([]bindings.Iovec, 32)
-
-			var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
-
-			if ret != bindings.QUICLY_OK || num_packets == 0 {
-				s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
-				continue
-			}
-
-			for i := 0; i < int(num_packets); i++ {
-				packets_buf[i].Deref() // realize the struct copy from C -> go
-
-				data := bindings.IovecToBytes(packets_buf[i])
-
-				n, err := s.Conn.Write(data)
-				s.Logger.Debug().Msgf("[%v] Handle PROC: %v ()", s.id, starttime, n)
-				s.Logger.Debug().Msgf("SEND packet of len %d [%v]: %v", n, err, data)
-			}
 			continue
-		case <-time.After(1 * time.Second):
+
+		case <-s.Ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
 			break
 		}
+
+		s.flushOutgoingQueue()
+	}
+}
+
+func (s *QClientSession) flushOutgoingQueue() {
+	num_packets := bindings.Size_t(32)
+	packets_buf := make([]bindings.Iovec, 32)
+
+	s.exclusiveLock.Lock()
+	defer s.exclusiveLock.Unlock()
+
+	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
+
+	if ret != bindings.QUICLY_OK {
+		s.Logger.Info().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
+		return
+	}
+
+	for i := 0; i < int(num_packets); i++ {
+		packets_buf[i].Deref() // realize the struct copy from C -> go
+
+		data := bindings.IovecToBytes(packets_buf[i])
+
+		n, err := s.Conn.Write(data)
+		s.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
 	}
 }
 
@@ -346,10 +341,10 @@ func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
 		return
 	}
 
-	s.streamsLock.RLock()
+	s.streamsLock.Lock()
 	st, ok := s.streams[streamId]
 	delete(s.streams, streamId)
-	s.streamsLock.RUnlock()
+	s.streamsLock.Unlock()
 
 	if ok {
 		s.OnStreamCloseCallback(st, error)

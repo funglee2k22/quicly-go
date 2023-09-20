@@ -10,8 +10,8 @@ var _ types.Session = &QClientSession{}
 var _ types.Stream = &QStream{}
 
 const (
-	BUF_SIZE  = 4096
-	READ_SIZE = 32 * 1024
+	READ_SIZE         = 512 * 1024
+	SMALL_BUFFER_SIZE = 1024
 )
 
 func QuiclyInitializeEngine(certfile string, certkey string) int {
