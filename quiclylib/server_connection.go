@@ -6,6 +6,7 @@ import (
 	"github.com/Project-Faster/quicly-go/internal/bindings"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -85,7 +86,7 @@ func (s *QServerSession) connectionInHandler() {
 			break
 		}
 
-		s.Logger.Debug().Msgf("[%v] UDP packet", s.id)
+		s.Logger.Info().Msgf("[%v] UDP packet", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
 			s.Logger.Debug().Msgf("QUICLY No packet")
@@ -100,6 +101,7 @@ func (s *QServerSession) connectionInHandler() {
 			}
 		}
 
+		s.Logger.Info().Msgf("CONN READ %d: %d", s.id, n)
 		pkt := &packet{
 			data:    buf[:n],
 			dataLen: n,
@@ -115,7 +117,6 @@ func (s *QServerSession) connectionInHandler() {
 }
 
 func (s *QServerSession) connectionProcessHandler() {
-	returnAddr := s.Conn.RemoteAddr().(*net.UDPAddr)
 	defer func() {
 		_ = recover()
 		s.handlersWaiter.Done()
@@ -127,10 +128,9 @@ func (s *QServerSession) connectionProcessHandler() {
 			if pkt == nil {
 				break
 			}
+			s.Logger.Info().Msgf("CONN PROC %d: %d", pkt.streamid, pkt.dataLen)
+
 			addr, port := pkt.Address()
-			if len(addr) == 0 || port == -1 {
-				addr, port = returnAddr.IP.String(), returnAddr.Port
-			}
 
 			var ptr_id bindings.Size_t = 0
 
@@ -169,7 +169,7 @@ func (s *QServerSession) connectionWriteHandler() {
 			if pkt == nil {
 				continue
 			}
-			//s.Logger.Info().Msgf("STREAM WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
+			s.Logger.Info().Msgf("CONN WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
 
 			s.streamsLock.RLock()
 			var stream, _ = s.streams[pkt.streamid].(*QStream)
@@ -249,22 +249,26 @@ func (s *QServerSession) Accept() (net.Conn, error) {
 
 	for {
 		select {
+		case <-s.Ctx.Done():
+			return nil, io.ErrClosedPipe
 		case <-time.After(1 * time.Millisecond):
 			continue
 		default:
 		}
 
 		s.streamsLock.RLock()
-		if len(s.streamAcceptQueue) > 0 {
-			s.streamsLock.RUnlock()
-			s.streamsLock.Lock()
-			defer s.streamsLock.Unlock()
-
-			st := s.streamAcceptQueue[0]
-			s.streamAcceptQueue = s.streamAcceptQueue[1:]
-			return st, nil
-		}
+		checkEmpty := len(s.streamAcceptQueue) == 0
 		s.streamsLock.RUnlock()
+		if checkEmpty {
+			continue
+		}
+
+		s.streamsLock.Lock()
+		defer s.streamsLock.Unlock()
+
+		st := s.streamAcceptQueue[0]
+		s.streamAcceptQueue = s.streamAcceptQueue[1:]
+		return st, nil
 	}
 }
 

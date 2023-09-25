@@ -86,14 +86,14 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	case <-s.bufferUpdateCh:
 		s.inBufferLock.Lock()
 		wr, _ := s.streamInBuf.Read(b)
-		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
+		s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
 		s.inBufferLock.Unlock()
 		return wr, nil
 
 	case <-time.After(time.Until(s.readDeadline)):
 		s.inBufferLock.Lock()
 		wr, _ := s.streamInBuf.Read(b)
-		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
+		s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
 		s.inBufferLock.Unlock()
 		if wr > 0 {
 			return wr, nil
@@ -126,7 +126,7 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 	wr, _ := s.streamOutBuf.Write(b)
 	s.outBufferLock.Unlock()
 
-	s.Logger.Debug().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
+	s.Logger.Info().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
 
 	s.lastWrite = time.Now()
 	var client, _ = s.session.(*QClientSession)
@@ -167,7 +167,7 @@ func (s *QStream) OnReceived(data []byte, dataLen int) {
 	s.streamInBuf.Write(data[:dataLen])
 	s.inBufferLock.Unlock()
 
-	s.Logger.Debug().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
+	s.Logger.Info().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
 
 	receivedCounter++
 
