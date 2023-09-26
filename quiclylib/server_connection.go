@@ -95,11 +95,6 @@ func (s *QServerSession) connectionInHandler() {
 
 		buf := buffList[0]
 		buffList = buffList[1:]
-		if len(buffList) == 0 {
-			for i := 0; i < 128; i++ {
-				buffList = append(buffList, make([]byte, READ_SIZE))
-			}
-		}
 
 		s.Logger.Info().Msgf("CONN READ %d: %d", s.id, n)
 		pkt := &packet{
@@ -112,6 +107,12 @@ func (s *QServerSession) connectionInHandler() {
 			break
 		case <-time.After(100 * time.Millisecond):
 			break
+		}
+
+		if len(buffList) == 0 {
+			for i := 0; i < 128; i++ {
+				buffList = append(buffList, make([]byte, READ_SIZE))
+			}
 		}
 	}
 }
@@ -252,7 +253,7 @@ func (s *QServerSession) Accept() (net.Conn, error) {
 		case <-s.Ctx.Done():
 			return nil, io.ErrClosedPipe
 		case <-time.After(1 * time.Millisecond):
-			continue
+			break
 		default:
 		}
 
