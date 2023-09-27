@@ -43,19 +43,9 @@ func (s *QServerSession) ID() uint64 {
 	return s.id
 }
 
-func (s *QServerSession) init() {
-	if s.incomingQueue == nil {
-		s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
-
-		s.incomingQueue = make(chan *packet, 1024)
-		s.outgoingQueue = make(chan *packet, 1024)
-		s.streams = make(map[uint64]types.Stream)
-
-		go s.channelsWatcher()
-	}
-}
-
 func (s *QServerSession) channelsWatcher() {
+	defer s.handlersWaiter.Done()
+
 	for {
 		select {
 		case <-s.Ctx.Done():
@@ -228,12 +218,19 @@ func (s *QServerSession) start() {
 	if s.started {
 		return
 	}
+	s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
+
+	s.incomingQueue = make(chan *packet, 1024)
+	s.outgoingQueue = make(chan *packet, 1024)
+
 	s.streams = make(map[uint64]types.Stream)
 	s.streamAcceptQueue = make([]types.Stream, 0, 32)
 
+	s.handlersWaiter.Add(4)
 	go s.connectionInHandler()
 	go s.connectionProcessHandler()
 	go s.connectionWriteHandler()
+	go s.channelsWatcher()
 	s.started = true
 }
 
@@ -291,6 +288,8 @@ func (s *QServerSession) Close() error {
 	s.streamAcceptQueue = nil
 	s.streams = nil
 	s.streamsLock.Unlock()
+
+	s.handlersWaiter.Wait()
 	return s.Conn.Close()
 }
 
