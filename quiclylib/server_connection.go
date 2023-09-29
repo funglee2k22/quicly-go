@@ -64,11 +64,16 @@ func (s *QServerSession) connectionInHandler() {
 	}()
 
 	var buffList = make([][]byte, 0, 128)
-	for i := 0; i < 128; i++ {
-		buffList = append(buffList, make([]byte, READ_SIZE))
-	}
+
+	_ = s.Conn.SetReadBuffer(SMALL_BUFFER_SIZE)
 
 	for {
+		if len(buffList) == 0 {
+			for i := 0; i < 128; i++ {
+				buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
+			}
+		}
+
 		select {
 		case <-s.Ctx.Done():
 			return
@@ -81,7 +86,7 @@ func (s *QServerSession) connectionInHandler() {
 		s.Logger.Info().Msgf("[%v] UDP packet", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
-			s.Logger.Debug().Msgf("QUICLY No packet")
+			s.Logger.Info().Msgf("QUICLY No packet")
 			continue
 		}
 
@@ -97,14 +102,8 @@ func (s *QServerSession) connectionInHandler() {
 		select {
 		case s.incomingQueue <- pkt:
 			break
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(1 * time.Millisecond):
 			break
-		}
-
-		if len(buffList) == 0 {
-			for i := 0; i < 128; i++ {
-				buffList = append(buffList, make([]byte, READ_SIZE))
-			}
 		}
 	}
 }
@@ -212,6 +211,8 @@ func (s *QServerSession) flushOutgoingQueue() {
 
 		data := bindings.IovecToBytes(packets_buf[i])
 
+		_ = s.Conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+
 		n, err := s.Conn.Write(data)
 		s.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
 	}
@@ -235,14 +236,6 @@ func (s *QServerSession) start() {
 	go s.connectionWriteHandler()
 	go s.channelsWatcher()
 	s.started = true
-}
-
-func (s *QServerSession) enqueueOutgoingPacket(newPacket packet) {
-	s.outgoingQueue <- &packet{
-		data:    newPacket.data,
-		dataLen: newPacket.dataLen,
-		addr:    nil,
-	}
 }
 
 func (s *QServerSession) Accept() (net.Conn, error) {
