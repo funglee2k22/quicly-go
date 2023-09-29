@@ -76,6 +76,8 @@ func (s *QServerSession) connectionInHandler() {
 			break
 		}
 
+		_ = s.Conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
 		s.Logger.Info().Msgf("[%v] UDP packet", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
@@ -116,6 +118,7 @@ func (s *QServerSession) connectionProcessHandler() {
 	for {
 		select {
 		case pkt := <-s.incomingQueue:
+			s.Logger.Info().Msgf("CONN PROC %v", pkt)
 			if pkt == nil {
 				break
 			}
