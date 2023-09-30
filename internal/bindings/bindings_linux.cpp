@@ -108,7 +108,7 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 {
     int ret;
 
-    printf("stream opened: %lld\n", stream->stream_id);
+    printf("stream opened: %ld\n", stream->stream_id);
 
     if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
         return ret;
@@ -123,7 +123,7 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 
 static void on_destroy(quicly_stream_t *stream, int err)
 {
-    printf( "\nstream %lld closed, err: %d\n", stream->stream_id, err );
+    printf( "\nstream %ld closed, err: %d\n", stream->stream_id, err );
 
     // callback to go code
     const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
@@ -134,13 +134,13 @@ static void on_destroy(quicly_stream_t *stream, int err)
 
 static void on_stop_sending(quicly_stream_t *stream, int err)
 {
-    printf("\nreceived STOP_SENDING: %lld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
+    printf("\nreceived STOP_SENDING: %ld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 
 static void on_receive_reset(quicly_stream_t *stream, int err)
 {
-    printf("\nreceived RESET_STREAM: %lld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
+    printf("\nreceived RESET_STREAM: %ld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 

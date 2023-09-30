@@ -8,6 +8,7 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"io"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 
@@ -60,12 +61,17 @@ func (s *QServerSession) channelsWatcher() {
 func (s *QServerSession) connectionInHandler() {
 	defer func() {
 		_ = recover()
+		runtime.UnlockOSThread()
 		s.handlersWaiter.Done()
 	}()
 
 	var buffList = make([][]byte, 0, 128)
 
 	_ = s.Conn.SetReadBuffer(SMALL_BUFFER_SIZE)
+
+	runtime.LockOSThread()
+
+	sleepCounter := 0
 
 	for {
 		if len(buffList) == 0 {
@@ -77,11 +83,17 @@ func (s *QServerSession) connectionInHandler() {
 		select {
 		case <-s.Ctx.Done():
 			return
-		case <-time.After(1 * time.Millisecond):
+		default:
 			break
 		}
 
-		_ = s.Conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		if sleepCounter > 1000 {
+			<-time.After(100 * time.Microsecond)
+			sleepCounter = 0
+		}
+		sleepCounter++
+
+		_ = s.Conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
 
 		s.Logger.Info().Msgf("[%v] UDP packet", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
@@ -99,12 +111,7 @@ func (s *QServerSession) connectionInHandler() {
 			dataLen: n,
 			addr:    addr,
 		}
-		select {
-		case s.incomingQueue <- pkt:
-			break
-		case <-time.After(1 * time.Millisecond):
-			break
-		}
+		s.incomingQueue <- pkt
 	}
 }
 
@@ -119,6 +126,7 @@ func (s *QServerSession) connectionProcessHandler() {
 		case pkt := <-s.incomingQueue:
 			s.Logger.Info().Msgf("CONN PROC %v", pkt)
 			if pkt == nil {
+				s.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
 				break
 			}
 			s.Logger.Info().Msgf("CONN PROC %d: %d", pkt.streamid, pkt.dataLen)
@@ -142,11 +150,7 @@ func (s *QServerSession) connectionProcessHandler() {
 
 		case <-s.Ctx.Done():
 			return
-		case <-time.After(100 * time.Millisecond):
-			break
 		}
-
-		s.flushOutgoingQueue()
 	}
 }
 
@@ -155,6 +159,8 @@ func (s *QServerSession) connectionWriteHandler() {
 		_ = recover()
 		s.handlersWaiter.Done()
 	}()
+
+	sleepCounter := 0
 
 	for {
 		select {
@@ -184,15 +190,25 @@ func (s *QServerSession) connectionWriteHandler() {
 
 		case <-s.Ctx.Done():
 			return
-		case <-time.After(100 * time.Millisecond):
+
+		default:
 			break
 		}
+
+		if sleepCounter > 1000 {
+			<-time.After(100 * time.Microsecond)
+			sleepCounter = 0
+		}
+		sleepCounter++
 
 		s.flushOutgoingQueue()
 	}
 }
 
 func (s *QServerSession) flushOutgoingQueue() {
+	s.Logger.Info().Msgf("CONN FLUSH START")
+	defer s.Logger.Info().Msgf("CONN FLUSH END")
+
 	num_packets := bindings.Size_t(32)
 	packets_buf := make([]bindings.Iovec, 32)
 
