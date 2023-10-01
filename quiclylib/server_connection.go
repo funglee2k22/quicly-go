@@ -95,7 +95,7 @@ func (s *QServerSession) connectionInHandler() {
 
 		_ = s.Conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
 
-		s.Logger.Info().Msgf("[%v] UDP packet", s.id)
+		s.Logger.Info().Msgf("[%v] UDP read", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
 			s.Logger.Info().Msgf("QUICLY No packet")
@@ -206,9 +206,6 @@ func (s *QServerSession) connectionWriteHandler() {
 }
 
 func (s *QServerSession) flushOutgoingQueue() {
-	s.Logger.Info().Msgf("CONN FLUSH START")
-	defer s.Logger.Info().Msgf("CONN FLUSH END")
-
 	num_packets := bindings.Size_t(32)
 	packets_buf := make([]bindings.Iovec, 32)
 
@@ -218,7 +215,7 @@ func (s *QServerSession) flushOutgoingQueue() {
 	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
 
 	if ret != bindings.QUICLY_OK {
-		s.Logger.Info().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
+		s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
 		return
 	}
 
@@ -278,6 +275,7 @@ func (s *QServerSession) Accept() (net.Conn, error) {
 
 		st := s.streamAcceptQueue[0]
 		s.streamAcceptQueue = s.streamAcceptQueue[1:]
+		s.Logger.Info().Msgf("QUICLY accepted new stream: %%v", st)
 		return st, nil
 	}
 }
