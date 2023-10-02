@@ -122,16 +122,18 @@ func runAsClient_quic(ip *net.UDPAddr, ctx context.Context) {
 
 	tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"qpep"}}
 
-	c, err := quic.DialAddr(ip.IP.String(), tlsConf, options)
+	c, err := quic.DialAddr(ip.String(), tlsConf, options)
 	if err != nil {
+		logger.Err(err).Send()
 		return
 	}
 	defer func() {
 		c.CloseWithError(quic.ApplicationErrorCode(0), "close")
 	}()
 
-	st, _ := c.OpenStream()
+	st, err := c.OpenStream()
 	if st == nil {
+		logger.Err(err).Send()
 		return
 	}
 
@@ -156,8 +158,9 @@ func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
 
 	tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"qpep"}}
 
-	c, err := quic.ListenAddr(ip.IP.String(), tlsConf, options)
+	c, err := quic.ListenAddr(ip.String(), tlsConf, options)
 	if err != nil {
+		logger.Err(err).Send()
 		return
 	}
 	defer func() {
