@@ -204,7 +204,7 @@ func (s *QClientSession) flushOutgoingQueue() {
 	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
 
 	if ret != bindings.QUICLY_OK {
-		s.Logger.Info().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
+		s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
 		return
 	}
 

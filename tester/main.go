@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"github.com/Project-Faster/quic-go"
+	_ "github.com/Project-Faster/quic-go"
 	"github.com/Project-Faster/quicly-go"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
@@ -14,9 +17,25 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 var logger log.Logger
+
+type qgoAdapter struct {
+	quic.Stream
+
+	locip net.Addr
+	remip net.Addr
+}
+
+func (q qgoAdapter) LocalAddr() net.Addr {
+	return q.locip
+}
+
+func (q qgoAdapter) RemoteAddr() net.Addr {
+	return q.remip
+}
 
 func init() {
 	logger = log.New(os.Stdout).With().Timestamp().Logger()
@@ -24,12 +43,15 @@ func init() {
 
 func main() {
 	var clientFlag = flag.Bool("client", false, "Mode is client")
+	var quicgoFlag = flag.Bool("quicgo", false, "Use Quicgo lib")
 	var remoteHost = flag.String("host", "127.0.0.1", "Host address to use")
 	var remotePort = flag.Int("port", 8443, "Port to use")
 	var certFile = flag.String("cert", "server_cert.pem", "PEM certificate to use")
 	var certKey = flag.String("key", "", "PEM key for the certificate")
 
 	flag.Parse()
+
+	//quic.
 
 	options := quicly.Options{
 		Logger:          &logger,
@@ -54,19 +76,26 @@ func main() {
 	ctx := context.Background()
 
 	if *clientFlag {
-		if len(options.CertificateFile) == 0 {
-			logger.Error().Msgf("Certificate file is necessary for client execution")
-			return
+		if !(*quicgoFlag) {
+			if len(options.CertificateFile) == 0 {
+				logger.Error().Msgf("Certificate file is necessary for client execution")
+				return
+			}
+			go runAsClient_quicly(ip, ctx)
+		} else {
+			go runAsClient_quic(ip, ctx)
 		}
-		go runAsClient(ip, ctx)
 
 	} else {
-		if len(options.CertificateFile) == 0 || len(options.CertificateKey) == 0 {
-			logger.Error().Msgf("Certificate file and Key necessary for server execution")
-			return
+		if !(*quicgoFlag) {
+			if len(options.CertificateFile) == 0 || len(options.CertificateKey) == 0 {
+				logger.Error().Msgf("Certificate file and Key necessary for server execution")
+				return
+			}
+			go runAsServer_quicly(ip, ctx)
+		} else {
+			go runAsServer_quic(ip, ctx)
 		}
-
-		go runAsServer(ip, ctx)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -78,7 +107,91 @@ func main() {
 	quicly.Terminate()
 }
 
-func runAsClient(ip *net.UDPAddr, ctx context.Context) {
+func runAsClient_quic(ip *net.UDPAddr, ctx context.Context) {
+	logger.Info().Msgf("Starting as client")
+
+	options := &quic.Config{
+		MaxIncomingStreams:      1024,
+		DisablePathMTUDiscovery: true,
+
+		HandshakeIdleTimeout: 10 * time.Second,
+		//KeepAlivePeriod:      1 * time.Second,
+
+		EnableDatagrams: false,
+	}
+
+	tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"qpep"}}
+
+	c, err := quic.DialAddr(ip.IP.String(), tlsConf, options)
+	if err != nil {
+		return
+	}
+	defer func() {
+		c.CloseWithError(quic.ApplicationErrorCode(0), "close")
+	}()
+
+	st, _ := c.OpenStream()
+	if st == nil {
+		return
+	}
+
+	handleClientStream(&qgoAdapter{
+		Stream: st,
+		remip:  ip,
+	})
+}
+
+func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
+	logger.Info().Msgf("Starting as server")
+
+	options := &quic.Config{
+		MaxIncomingStreams:      1024,
+		DisablePathMTUDiscovery: true,
+
+		HandshakeIdleTimeout: 10 * time.Second,
+		//KeepAlivePeriod:      1 * time.Second,
+
+		EnableDatagrams: false,
+	}
+
+	tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"qpep"}}
+
+	c, err := quic.ListenAddr(ip.IP.String(), tlsConf, options)
+	if err != nil {
+		return
+	}
+	defer func() {
+		c.Close()
+	}()
+
+	for {
+		logger.Info().Msgf("accepting...")
+		conn, err := c.Accept(ctx)
+		if err != nil {
+			logger.Err(err).Send()
+			continue
+		}
+
+		go func() {
+			for {
+				logger.Info().Msgf("accepting...")
+				st, err := conn.AcceptStream(ctx)
+				if err != nil {
+					logger.Err(err).Send()
+					continue
+				}
+
+				go handleServerStream(&qgoAdapter{
+					Stream: st,
+					locip:  ip,
+					remip:  nil,
+				})
+			}
+		}()
+	}
+}
+
+func runAsClient_quicly(ip *net.UDPAddr, ctx context.Context) {
 	logger.Info().Msgf("Starting as client")
 
 	c := quicly.Dial(ip, types.Callbacks{
@@ -107,7 +220,7 @@ func runAsClient(ip *net.UDPAddr, ctx context.Context) {
 	handleClientStream(st)
 }
 
-func runAsServer(ip *net.UDPAddr, ctx context.Context) {
+func runAsServer_quicly(ip *net.UDPAddr, ctx context.Context) {
 	logger.Info().Msgf("Starting as server")
 
 	c := quicly.Listen(ip, types.Callbacks{
