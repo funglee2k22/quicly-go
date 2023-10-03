@@ -168,22 +168,24 @@ func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
 	}()
 
 	for {
-		logger.Info().Msgf("accepting...")
+		logger.Info().Msgf("accepting connection...")
 		conn, err := c.Accept(ctx)
 		if err != nil {
 			logger.Err(err).Send()
 			continue
 		}
 
+		logger.Info().Msgf("accepted connection from: %v", conn.RemoteAddr())
 		go func() {
 			for {
-				logger.Info().Msgf("accepting...")
+				logger.Info().Msgf("accepting stream...")
 				st, err := conn.AcceptStream(ctx)
 				if err != nil {
 					logger.Err(err).Send()
 					continue
 				}
 
+				logger.Info().Msgf("accepted stream from: %v", st.StreamID())
 				go handleServerStream(&qgoAdapter{
 					Stream: st,
 					locip:  ip,
