@@ -11,7 +11,7 @@ var _ types.Stream = &QStream{}
 
 const (
 	READ_SIZE         = 512 * 1024
-	SMALL_BUFFER_SIZE = 1024
+	SMALL_BUFFER_SIZE = 4 * 1024
 )
 
 func QuiclyInitializeEngine(certfile string, certkey string) int {

@@ -135,7 +135,7 @@ func (s *QServerSession) connectionProcessHandler() {
 
 			var ptr_id bindings.Size_t = 0
 
-			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
+			err := bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
 			if err != bindings.QUICLY_OK {
 				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
 					s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.dataLen, err)
