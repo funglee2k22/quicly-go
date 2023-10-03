@@ -13,6 +13,7 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -28,6 +29,12 @@ type qgoAdapter struct {
 	locip net.Addr
 	remip net.Addr
 }
+
+type TesterOptions struct {
+	quicly.Options
+}
+
+type tester_func func(ip *net.UDPAddr, ctx context.Context)
 
 func (q qgoAdapter) LocalAddr() net.Addr {
 	return q.locip
@@ -61,10 +68,12 @@ func main() {
 
 	logger.Info().Msgf("Options: %v", options)
 
-	result := quicly.Initialize(options)
-	if result != errors.QUICLY_OK {
-		logger.Error().Msgf("Failed initialization: %v", result)
-		os.Exit(1)
+	if !(*quicgoFlag) {
+		result := quicly.Initialize(options)
+		if result != errors.QUICLY_OK {
+			logger.Error().Msgf("Failed initialization: %v", result)
+			os.Exit(1)
+		}
 	}
 
 	ip, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", *remoteHost, *remotePort))
@@ -74,29 +83,35 @@ func main() {
 	}
 
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, "Cert", options.CertificateFile)
+	ctx = context.WithValue(ctx, "Key", options.CertificateKey)
+
+	var tester_runner tester_func
 
 	if *clientFlag {
+		if len(options.CertificateFile) == 0 {
+			logger.Error().Msgf("Certificate file is necessary for client execution")
+			return
+		}
 		if !(*quicgoFlag) {
-			if len(options.CertificateFile) == 0 {
-				logger.Error().Msgf("Certificate file is necessary for client execution")
-				return
-			}
-			go runAsClient_quicly(ip, ctx)
+			tester_runner = runAsClient_quicly
 		} else {
-			go runAsClient_quic(ip, ctx)
+			tester_runner = runAsClient_quic
 		}
 
 	} else {
+		if len(options.CertificateFile) == 0 || len(options.CertificateKey) == 0 {
+			logger.Error().Msgf("Certificate file and Key necessary for server execution")
+			return
+		}
 		if !(*quicgoFlag) {
-			if len(options.CertificateFile) == 0 || len(options.CertificateKey) == 0 {
-				logger.Error().Msgf("Certificate file and Key necessary for server execution")
-				return
-			}
-			go runAsServer_quicly(ip, ctx)
+			tester_runner = runAsServer_quicly
 		} else {
-			go runAsServer_quic(ip, ctx)
+			tester_runner = runAsServer_quic
 		}
 	}
+
+	go tester_runner(ip, ctx)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -104,7 +119,9 @@ func main() {
 
 	logger.Info().Msg("Received termination signal")
 
-	quicly.Terminate()
+	if !(*quicgoFlag) {
+		quicly.Terminate()
+	}
 }
 
 func runAsClient_quic(ip *net.UDPAddr, ctx context.Context) {
@@ -156,7 +173,26 @@ func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
 		EnableDatagrams: false,
 	}
 
-	tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"qpep"}}
+	certFile := ctx.Value("Cert").(string)
+	keyFile := ctx.Value("Key").(string)
+
+	certPEM, err := ioutil.ReadFile(certFile)
+	if err != nil {
+		panic(err)
+	}
+	keyPEM, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		panic(err)
+	}
+
+	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		panic(err)
+	}
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{tlsCert},
+		NextProtos:   []string{"qpep"},
+	}
 
 	c, err := quic.ListenAddr(ip.String(), tlsConf, options)
 	if err != nil {
