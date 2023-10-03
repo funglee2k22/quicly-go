@@ -95,10 +95,10 @@ func (s *QServerSession) connectionInHandler() {
 
 		_ = s.Conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
 
-		s.Logger.Info().Msgf("[%v] UDP read", s.id)
+		s.Logger.Debug().Msgf("[%v] UDP read", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
-			s.Logger.Info().Msgf("QUICLY No packet")
+			s.Logger.Debug().Msgf("QUICLY No packet")
 			continue
 		}
 
