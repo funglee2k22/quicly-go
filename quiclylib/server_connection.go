@@ -121,6 +121,8 @@ func (s *QServerSession) connectionProcessHandler() {
 		s.handlersWaiter.Done()
 	}()
 
+	sleepCounter := 0
+
 	for {
 		select {
 		case pkt := <-s.incomingQueue:
@@ -151,6 +153,14 @@ func (s *QServerSession) connectionProcessHandler() {
 		case <-s.Ctx.Done():
 			return
 		}
+
+		if sleepCounter > 1000 {
+			<-time.After(100 * time.Microsecond)
+			sleepCounter = 0
+		}
+		sleepCounter++
+
+		s.flushOutgoingQueue()
 	}
 }
 

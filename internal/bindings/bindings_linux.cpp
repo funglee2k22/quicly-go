@@ -232,35 +232,44 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
     quicly_decoded_packet_t* decoded = NULL;
     /* split UDP datagram into multiple QUIC packets */
     while (off < dgram_len) {
+        printf("trace@%d\n", __LINE__ );
         free(decoded);
         decoded = NULL;
         decoded = (quicly_decoded_packet_t*)malloc( sizeof(quicly_decoded_packet_t) );
 
         if (quicly_decode_packet(&ctx, decoded, (const uint8_t *)msg, dgram_len-off, &off) == SIZE_MAX) {
             err = QUICLY_ERROR_FAILED;
+            printf("trace@%d\n", __LINE__ );
             break;
         }
 
         /* find the corresponding connection */
         for (i = 0; i < 256 && conns_table[i] != NULL; ++i)
             if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, decoded)) {
+                printf("trace@%d %d\n", __LINE__, i );
                 break;
             }
         if( i >= 256 ) {
             err = QUICLY_ERROR_FAILED;
+            printf("trace@%d\n", __LINE__ );
         }
 
         int ret = 0;
         if (conns_table[i] != NULL) {
+            printf("trace@%d\n", __LINE__ );
             /* let the current connection handle ingress packets */
             ret = quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, decoded);
+            printf("trace@%d %d\n", __LINE__, ret );
 
         } else if (!is_client) {
             if( id != NULL ) {
+            printf("trace@%d\n", __LINE__ );
               *id = i;
             }
+            printf("trace@%d\n", __LINE__ );
             /* assume that the packet is a new connection */
             ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, decoded, NULL, &next_cid, NULL, NULL);
+            printf("trace@%d %d %p %p\n", __LINE__, ret, conns_table + *id, conns_table[*id] );
         }
         if( ret != 0 ) {
           *id = 0;
