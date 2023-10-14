@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Project-Faster/quic-go"
-	_ "github.com/Project-Faster/quic-go"
 	"github.com/Project-Faster/quicly-go"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
@@ -17,6 +16,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 )
@@ -292,6 +292,13 @@ func runAsServer_quicly(ip *net.UDPAddr, ctx context.Context) {
 }
 
 func handleServerStream(stream net.Conn) {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error().Msgf("err: %v", err)
+			debug.PrintStack()
+		}
+	}()
+
 	data := make([]byte, 4096)
 	for {
 		n, err := stream.Read(data)
@@ -317,6 +324,13 @@ func handleServerStream(stream net.Conn) {
 }
 
 func handleClientStream(stream net.Conn) {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error().Msgf("err: %v", err)
+			debug.PrintStack()
+		}
+	}()
+
 	scan := bufio.NewScanner(os.Stdin)
 	for scan.Scan() {
 		n, err := stream.Write(scan.Bytes())

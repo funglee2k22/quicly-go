@@ -145,6 +145,7 @@ func (s *QServerSession) connectionInHandler() {
 		var targetHandler = s.handlers[addrHash]
 		if targetHandler == nil {
 			targetHandler = &remoteClientHandler{}
+			s.Logger.Info().Msgf("HANDLER INIT")
 			targetHandler.init(s, addr)
 			s.handlers[targetHandler.id] = targetHandler
 		}
@@ -236,11 +237,17 @@ func (s *QServerSession) OnStreamOpen(streamId uint64) {
 	if s.OnStreamOpenCallback != nil {
 		s.OnStreamOpenCallback(st)
 	}
-
 }
 
 func (s *QServerSession) OnStreamClose(streamId uint64, error int) {
-	// should never be called by either the c or go side
+	st, _ := s.getStreamInternal(streamId)
+	if st == nil {
+		panic(errors.QUICLY_ERROR_FAILED)
+	}
+
+	if s.OnStreamCloseCallback != nil {
+		s.OnStreamCloseCallback(st, error)
+	}
 }
 
 // --- remote client handler --- //
@@ -266,6 +273,8 @@ type remoteClientHandler struct {
 }
 
 func (r *remoteClientHandler) init(session *QServerSession, addr *net.UDPAddr) uint64 {
+	session.Logger.Info().Msgf("Client handler start: %v / %v", session, addr)
+
 	if session == nil || addr == nil {
 		panic(errors.QUICLY_ERROR_FAILED)
 	}
