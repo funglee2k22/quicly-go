@@ -57,7 +57,7 @@ func (s *QServerSession) start() {
 
 	s.streamAcceptQueue = make(chan types.Stream)
 
-	s.handlersWaiter.Add(3)
+	s.handlersWaiter.Add(2)
 	go s.connectionInHandler()
 	go s.channelsWatcher()
 	s.started = true

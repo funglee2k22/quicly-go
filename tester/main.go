@@ -78,7 +78,7 @@ func main() {
 
 	ip, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", *remoteHost, *remotePort))
 	if err != nil {
-		logger.Err(err).Send()
+		logger.Err(err).Caller(1).Send()
 		return
 	}
 
@@ -141,7 +141,7 @@ func runAsClient_quic(ip *net.UDPAddr, ctx context.Context) {
 
 	c, err := quic.DialAddr(ip.String(), tlsConf, options)
 	if err != nil {
-		logger.Err(err).Send()
+		logger.Err(err).Caller(1).Send()
 		return
 	}
 	defer func() {
@@ -150,7 +150,7 @@ func runAsClient_quic(ip *net.UDPAddr, ctx context.Context) {
 
 	st, err := c.OpenStream()
 	if st == nil {
-		logger.Err(err).Send()
+		logger.Err(err).Caller(1).Send()
 		return
 	}
 
@@ -196,7 +196,7 @@ func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
 
 	c, err := quic.ListenAddr(ip.String(), tlsConf, options)
 	if err != nil {
-		logger.Err(err).Send()
+		logger.Err(err).Caller(1).Send()
 		return
 	}
 	defer func() {
@@ -207,7 +207,8 @@ func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
 		logger.Info().Msgf("accepting connection...")
 		conn, err := c.Accept(ctx)
 		if err != nil {
-			logger.Err(err).Send()
+			logger.Err(err).Caller(1).Send()
+			<-time.After(100 * time.Millisecond)
 			continue
 		}
 
@@ -217,7 +218,8 @@ func runAsServer_quic(ip *net.UDPAddr, ctx context.Context) {
 				logger.Info().Msgf("accepting stream...")
 				st, err := conn.AcceptStream(ctx)
 				if err != nil {
-					logger.Err(err).Send()
+					logger.Err(err).Caller(1).Send()
+					<-time.After(100 * time.Millisecond)
 					continue
 				}
 
@@ -283,7 +285,7 @@ func runAsServer_quicly(ip *net.UDPAddr, ctx context.Context) {
 		logger.Info().Msgf("accepting...")
 		st, err := c.Accept()
 		if err != nil {
-			logger.Err(err).Send()
+			logger.Err(err).Caller(1).Send()
 			continue
 		}
 
@@ -304,7 +306,7 @@ func handleServerStream(stream net.Conn) {
 		n, err := stream.Read(data)
 		if err != nil {
 			if err != io.EOF {
-				logger.Err(err).Send()
+				logger.Err(err).Caller(1).Send()
 				return
 			}
 			continue
@@ -314,7 +316,7 @@ func handleServerStream(stream net.Conn) {
 		n, err = stream.Write(data[:n])
 		if err != nil {
 			if err != io.EOF {
-				logger.Err(err).Send()
+				logger.Err(err).Caller(1).Send()
 				return
 			}
 			continue
@@ -336,7 +338,7 @@ func handleClientStream(stream net.Conn) {
 		n, err := stream.Write(scan.Bytes())
 		if err != nil {
 			if err != io.EOF {
-				logger.Err(err).Send()
+				logger.Err(err).Caller(1).Send()
 				return
 			}
 			continue
@@ -349,7 +351,7 @@ func handleClientStream(stream net.Conn) {
 		n, err = stream.Read(data)
 		if err != nil {
 			if err != io.EOF {
-				logger.Err(err).Send()
+				logger.Err(err).Caller(1).Send()
 				return
 			}
 			continue
