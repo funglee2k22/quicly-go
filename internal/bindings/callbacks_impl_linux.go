@@ -27,6 +27,13 @@ func RegisterConnection(s types.Session, id uint64) {
 	connectionsRegistry[id] = s
 }
 
+func GetConnection(id uint64) (types.Session, bool) {
+	callbackLock.RLock()
+	defer callbackLock.RUnlock()
+	s, ok := connectionsRegistry[id]
+	return s, ok
+}
+
 func RemoveConnection(id uint64) {
 	callbackLock.Lock()
 	defer callbackLock.Unlock()

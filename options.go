@@ -8,8 +8,9 @@ import (
 type Options struct {
 	Logger *log.Logger
 
-	CertificateFile string
-	CertificateKey  string
+	ApplicationProtocol string
+	CertificateFile     string
+	CertificateKey      string
 }
 
 func (o Options) String() string {

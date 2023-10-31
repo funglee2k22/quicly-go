@@ -45,17 +45,14 @@ func addrToHash(addr *net.UDPAddr) uint64 {
 	return h64.Sum64()
 }
 
-func (s *QServerSession) ID() uint64 {
-	return s.id
-}
-
-func (s *QServerSession) start() {
+func (s *QServerSession) init() {
 	if s.started {
 		return
 	}
 	s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
 	s.streamAcceptQueue = make(chan types.Stream)
+	s.handlers = make(map[uint64]*remoteClientHandler)
 
 	s.handlersWaiter.Add(2)
 	go s.connectionInHandler()
@@ -63,12 +60,52 @@ func (s *QServerSession) start() {
 	s.started = true
 }
 
+func (s *QServerSession) enterCritical() {
+	//s.Logger.Warn().Msgf("Enter Critical section >>")
+	exclusiveLock.Lock()
+	//s.Logger.Warn().Msgf("Enter Critical section <<")
+}
+func (s *QServerSession) exitCritical() {
+	//s.Logger.Warn().Msgf("Exit Critical section >>")
+	exclusiveLock.Unlock()
+	//s.Logger.Warn().Msgf("Exit Critical section <<")
+}
+
 func (s *QServerSession) enqueueStreamAccept(stream types.Stream) {
 	s.streamAcceptQueue <- stream
 }
 
-func (s *QServerSession) doRegister(id uint64) {
-	bindings.RegisterConnection(s, id)
+func (s *QServerSession) handlerAdd(addr *net.UDPAddr) *remoteClientHandler {
+	addrHash := addrToHash(addr)
+
+	s.enterCritical()
+	var targetHandler = s.handlers[addrHash]
+	s.exitCritical()
+
+	if targetHandler == nil {
+		targetHandler = &remoteClientHandler{}
+		targetHandler.init(s, addr)
+
+		s.enterCritical()
+		s.handlers[targetHandler.id] = targetHandler
+		s.exitCritical()
+	}
+	return targetHandler
+}
+func (s *QServerSession) handlerDelete(id uint64) {
+	bindings.RemoveConnection(id)
+
+	s.enterCritical()
+	defer s.exitCritical()
+
+	var deleteHash uint64 = 0
+	for hash, handler := range s.handlers {
+		if handler.id == id {
+			deleteHash = hash
+			break
+		}
+	}
+	delete(s.handlers, deleteHash)
 }
 
 func (s *QServerSession) channelsWatcher() {
@@ -81,13 +118,15 @@ func (s *QServerSession) channelsWatcher() {
 		case <-time.After(250 * time.Millisecond):
 			break
 		}
-		//s.Logger.Info().Msgf("[conn:%v] in:%d out:%d str:%d", s.id, len(s.incomingQueue), len(s.outgoingQueue), len(s.streams))
+		s.Logger.Debug().Msgf("[conn:%v] str:%d", s.id, len(s.handlers))
 	}
 }
 
 func (s *QServerSession) connectionInHandler() {
 	defer func() {
-		_ = recover()
+		if err := recover(); err != nil {
+			s.Logger.Error().Msgf("PANIC: %v", err)
+		}
 		s.ctxCancel()
 		runtime.UnlockOSThread()
 		s.handlersWaiter.Done()
@@ -132,44 +171,45 @@ func (s *QServerSession) connectionInHandler() {
 		buf := buffList[0]
 		buffList = buffList[1:]
 
-		s.Logger.Info().Msgf("CONN READ: %d", n)
-		pkt := &packet{
-			data:    buf[:n],
-			dataLen: n,
-			addr:    addr,
+		s.Logger.Info().Msgf("CONN READ: %d (%v)", n, addr)
+		pkt := &types.Packet{
+			Data:       buf[:n],
+			DataLen:    n,
+			RetAddress: addr,
 		}
 
-		addrHash := addrToHash(addr)
-
-		exclusiveLock.Lock()
-		var targetHandler = s.handlers[addrHash]
-		if targetHandler == nil {
-			targetHandler = &remoteClientHandler{}
-			s.Logger.Info().Msgf("HANDLER INIT")
-			targetHandler.init(s, addr)
-			s.handlers[targetHandler.id] = targetHandler
-		}
-		exclusiveLock.Unlock()
-
-		targetHandler.sendPacket(pkt)
+		s.Logger.Info().Msgf("CONN GET HANDLER")
+		targetHandler := s.handlerAdd(addr)
+		s.Logger.Info().Msgf("CONN HANDLER")
+		targetHandler.receiveIncomingPacket(pkt)
+		s.Logger.Info().Msgf("CONN READ SENT: %d", n)
 	}
 }
 
 func (s *QServerSession) Accept() (net.Conn, error) {
-	s.start()
+	s.init()
 
 	for {
 		select {
 		case st := <-s.streamAcceptQueue:
-			s.Logger.Info().Msgf("QUICLY accepted new stream: %%v", st)
+			s.Logger.Info().Msgf("QUICLY accepted new stream: %v", st)
 			return st, nil
 		case <-s.Ctx.Done():
+			s.Logger.Error().Msgf("Server connection context closed")
 			return nil, io.ErrClosedPipe
 		case <-time.After(1 * time.Millisecond):
 			break
 		default:
 		}
 	}
+}
+
+func (s *QServerSession) StreamPacket(packet *types.Packet) {
+	panic("not implemented")
+}
+
+func (s *QServerSession) ID() uint64 {
+	return s.id
 }
 
 func (s *QServerSession) Close() error {
@@ -182,12 +222,12 @@ func (s *QServerSession) Close() error {
 			s.OnConnectionClose(s)
 		}
 	}()
-	exclusiveLock.Lock()
+	s.enterCritical()
 	for _, handler := range s.handlers {
 		handler.Close()
 	}
 	s.handlers = nil
-	exclusiveLock.Unlock()
+	s.exitCritical()
 
 	s.handlersWaiter.Wait()
 	return s.Conn.Close()
@@ -210,8 +250,8 @@ func (s *QServerSession) GetStream(id uint64) types.Stream {
 }
 
 func (s *QServerSession) getStreamInternal(id uint64) (types.Stream, *remoteClientHandler) {
-	exclusiveLock.Lock()
-	defer exclusiveLock.Unlock()
+	s.enterCritical()
+	defer s.exitCritical()
 
 	for _, handler := range s.handlers {
 		if st := handler.GetStream(id); st != nil {
@@ -227,8 +267,6 @@ func (s *QServerSession) OnStreamOpen(streamId uint64) {
 	if st == nil {
 		panic(errors.QUICLY_ERROR_FAILED)
 	}
-
-	s.enqueueStreamAccept(st)
 
 	if s.OnConnectionOpen != nil && len(handler.streams) == 1 {
 		s.OnConnectionOpen(handler)
@@ -247,247 +285,5 @@ func (s *QServerSession) OnStreamClose(streamId uint64, error int) {
 
 	if s.OnStreamCloseCallback != nil {
 		s.OnStreamCloseCallback(st, error)
-	}
-}
-
-// --- remote client handler --- //
-
-type remoteClientHandler struct {
-	// exported fields
-	Ctx    context.Context
-	Conn   *net.UDPConn
-	Logger log.Logger
-
-	// unexported fields
-	id          uint64
-	session     *QServerSession
-	returnAddr  *net.UDPAddr
-	streams     map[uint64]types.Stream
-	streamsLock sync.RWMutex
-
-	cancelFunc     context.CancelFunc
-	routinesWaiter sync.WaitGroup
-
-	incomingQueue chan *packet
-	outgoingQueue chan *packet
-}
-
-func (r *remoteClientHandler) init(session *QServerSession, addr *net.UDPAddr) uint64 {
-	session.Logger.Info().Msgf("Client handler start: %v / %v", session, addr)
-
-	if session == nil || addr == nil {
-		panic(errors.QUICLY_ERROR_FAILED)
-	}
-
-	r.id = addrToHash(addr)
-
-	r.session = session
-	r.Ctx, r.cancelFunc = context.WithCancel(session.Ctx)
-	r.Conn = session.Conn
-	r.Logger = session.Logger
-	r.returnAddr = addr
-
-	r.streams = make(map[uint64]types.Stream)
-
-	r.incomingQueue = make(chan *packet)
-	r.outgoingQueue = make(chan *packet)
-	return r.id
-}
-
-func (r *remoteClientHandler) sendPacket(pkt *packet) {
-	r.incomingQueue <- pkt
-}
-
-func (r *remoteClientHandler) Accept() (net.Conn, error) {
-	return nil, nil
-}
-
-func (r *remoteClientHandler) Close() error {
-	r.cancelFunc()
-
-	r.streamsLock.Lock()
-	for _, stream := range r.streams {
-		stream.Close()
-	}
-	r.streamsLock.Unlock()
-
-	r.routinesWaiter.Wait()
-
-	return nil
-}
-
-func (r *remoteClientHandler) Addr() net.Addr {
-	return r.returnAddr
-}
-
-func (r *remoteClientHandler) ID() uint64 {
-	return r.id
-}
-
-func (r *remoteClientHandler) OpenStream() types.Stream {
-	return nil
-}
-
-func (r *remoteClientHandler) OnStreamOpen(streamId uint64) {
-	if len(r.streams) == 1 {
-		r.session.OnConnectionOpen(r)
-	}
-
-	st := &QStream{
-		session: r.session,
-		conn:    r.Conn,
-		id:      streamId,
-	}
-	r.streamsLock.Lock()
-	r.streams[streamId] = st
-	r.streamsLock.Unlock()
-
-	r.session.enqueueStreamAccept(st)
-
-	r.session.OnStreamOpen(streamId)
-}
-
-func (r *remoteClientHandler) OnStreamClose(streamId uint64, code int) {
-	r.streamsLock.Lock()
-	closedStream := r.streams[streamId]
-	delete(r.streams, streamId)
-	r.streamsLock.Unlock()
-
-	if closedStream != nil && r.session.OnStreamCloseCallback != nil {
-		r.session.OnStreamCloseCallback(closedStream, code)
-	}
-}
-
-func (r *remoteClientHandler) GetStream(id uint64) types.Stream {
-	r.streamsLock.Lock()
-	defer r.streamsLock.Unlock()
-	return r.streams[id]
-}
-
-var _ types.Session = &remoteClientHandler{}
-
-func (r *remoteClientHandler) handlerProcess() {
-	defer func() {
-		_ = recover()
-		r.routinesWaiter.Done()
-	}()
-
-	sleepCounter := 0
-
-	for {
-		select {
-		case pkt := <-r.incomingQueue:
-			r.Logger.Info().Msgf("CONN PROC %v", pkt)
-			if pkt == nil {
-				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
-				break
-			}
-			r.Logger.Info().Msgf("CONN PROC %d: %d", pkt.streamid, pkt.dataLen)
-
-			addr, port := pkt.Address()
-
-			var ptr_id bindings.Size_t = 0
-
-			err := bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
-			if err != bindings.QUICLY_OK {
-				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
-					r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.dataLen, err)
-				} else {
-					r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.dataLen, err)
-				}
-				continue
-			}
-
-			r.session.doRegister(uint64(ptr_id))
-			break
-
-		case <-r.Ctx.Done():
-			return
-		}
-
-		if sleepCounter > 1000 {
-			<-time.After(100 * time.Microsecond)
-			sleepCounter = 0
-		}
-		sleepCounter++
-
-		r.flushOutgoingQueue()
-	}
-}
-
-func (r *remoteClientHandler) handlerOutgoing() {
-	defer func() {
-		_ = recover()
-		r.routinesWaiter.Done()
-	}()
-
-	sleepCounter := 0
-
-	for {
-		select {
-		case pkt := <-r.outgoingQueue:
-			if pkt == nil {
-				continue
-			}
-			r.Logger.Info().Msgf("CONN WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
-
-			r.streamsLock.RLock()
-			var stream, _ = r.streams[pkt.streamid].(*QStream)
-			r.streamsLock.RUnlock()
-
-			stream.outBufferLock.Lock()
-			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-			r.Logger.Info().Msgf("STREAM WRITE %d: %d", pkt.streamid, len(data))
-
-			stream.streamOutBuf.Reset()
-			stream.outBufferLock.Unlock()
-
-			errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.id), bindings.Size_t(pkt.streamid), data, bindings.Size_t(len(data)))
-			if errcode != errors.QUICLY_OK {
-				r.Logger.Error().Msgf("%v quicly errorcode: %d", r.id, errcode)
-				continue
-			}
-			continue
-
-		case <-r.Ctx.Done():
-			return
-
-		default:
-			break
-		}
-
-		if sleepCounter > 1000 {
-			<-time.After(100 * time.Microsecond)
-			sleepCounter = 0
-		}
-		sleepCounter++
-
-		r.flushOutgoingQueue()
-	}
-}
-
-func (r *remoteClientHandler) flushOutgoingQueue() {
-	num_packets := bindings.Size_t(32)
-	packets_buf := make([]bindings.Iovec, 32)
-
-	exclusiveLock.Lock()
-	defer exclusiveLock.Unlock()
-
-	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(r.session.ID()), packets_buf, &num_packets)
-
-	if ret != bindings.QUICLY_OK {
-		r.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
-		return
-	}
-
-	for i := 0; i < int(num_packets); i++ {
-		packets_buf[i].Deref() // realize the struct copy from C -> go
-
-		data := bindings.IovecToBytes(packets_buf[i])
-
-		_ = r.Conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-
-		n, err := r.Conn.Write(data)
-		r.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
 	}
 }

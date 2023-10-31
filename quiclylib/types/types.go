@@ -1,6 +1,7 @@
 package types
 
 import (
+	"hash/crc64"
 	"net"
 )
 
@@ -23,6 +24,8 @@ type Session interface {
 	OnStreamClose(uint64, int)
 
 	GetStream(uint64) Stream
+
+	StreamPacket(*Packet)
 }
 
 type Stream interface {
@@ -33,4 +36,22 @@ type Stream interface {
 	OnOpened()
 	OnReceived([]byte, int)
 	OnClosed() error
+}
+
+type Packet struct {
+	Streamid   uint64
+	Data       []byte
+	DataLen    int
+	RetAddress *net.UDPAddr
+}
+
+func (p *Packet) Address() (string, int) {
+	if p == nil || p.RetAddress == nil {
+		return "", -1
+	}
+	return p.RetAddress.IP.String(), p.RetAddress.Port
+}
+
+func (p *Packet) Crc64() uint64 {
+	return crc64.Checksum(p.Data[:p.DataLen], crc64.MakeTable(crc64.ISO))
 }

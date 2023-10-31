@@ -6,8 +6,8 @@
 package bindings
 
 /*
-#cgo LDFLAGS: C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
-#cgo CPPFLAGS: -DWIN32 -IC:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
+#cgo LDFLAGS: c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
+#cgo CPPFLAGS: -DWIN32 -Ic:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
 #include "quicly.h"
 #include "quicly_wrapper.h"
 #include "quicly/streambuf.h"
@@ -23,26 +23,26 @@ import (
 
 var mtx sync.Mutex
 
-// QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:20
-func QuiclyInitializeEngine(Certificate_file string, Key_file string) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+// QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:21
+func QuiclyInitializeEngine(Alpn string, Certificate_file string, Key_file string) int32 {
+	Alpn = safeString(Alpn)
+	cAlpn, cAlpnAllocMap := unpackPCharString(Alpn)
 	Certificate_file = safeString(Certificate_file)
 	cCertificate_file, cCertificate_fileAllocMap := unpackPCharString(Certificate_file)
 	Key_file = safeString(Key_file)
 	cKey_file, cKey_fileAllocMap := unpackPCharString(Key_file)
-	__ret := C.QuiclyInitializeEngine(cCertificate_file, cKey_file)
+	__ret := C.QuiclyInitializeEngine(cAlpn, cCertificate_file, cKey_file)
 	runtime.KeepAlive(Key_file)
 	runtime.KeepAlive(cKey_fileAllocMap)
 	runtime.KeepAlive(Certificate_file)
 	runtime.KeepAlive(cCertificate_fileAllocMap)
+	runtime.KeepAlive(Alpn)
+	runtime.KeepAlive(cAlpnAllocMap)
 	__v := (int32)(__ret)
 	return __v
 }
 
-// QuiclyCloseEngine function as declared in include/quicly_wrapper.h:22
+// QuiclyCloseEngine function as declared in include/quicly_wrapper.h:23
 func QuiclyCloseEngine() int32 {
 	mtx.Lock()
 	defer func(){
@@ -53,7 +53,7 @@ func QuiclyCloseEngine() int32 {
 	return __v
 }
 
-// QuiclyProcessMsg function as declared in include/quicly_wrapper.h:24
+// QuiclyProcessMsg function as declared in include/quicly_wrapper.h:25
 func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, Dgram_len Size_t, Id *Size_t) int32 {
 	mtx.Lock()
 	defer func(){
@@ -78,7 +78,7 @@ func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, D
 	return __v
 }
 
-// QuiclyConnect function as declared in include/quicly_wrapper.h:26
+// QuiclyConnect function as declared in include/quicly_wrapper.h:27
 func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
 	mtx.Lock()
 	defer func(){
@@ -97,7 +97,7 @@ func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
 	return __v
 }
 
-// QuiclyOpenStream function as declared in include/quicly_wrapper.h:28
+// QuiclyOpenStream function as declared in include/quicly_wrapper.h:29
 func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
 	mtx.Lock()
 	defer func(){
@@ -112,7 +112,7 @@ func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
 	return __v
 }
 
-// QuiclyCloseStream function as declared in include/quicly_wrapper.h:30
+// QuiclyCloseStream function as declared in include/quicly_wrapper.h:31
 func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
 	//mtx.Lock()
 	defer func(){
@@ -129,7 +129,7 @@ func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
 	return __v
 }
 
-// QuiclyClose function as declared in include/quicly_wrapper.h:32
+// QuiclyClose function as declared in include/quicly_wrapper.h:33
 func QuiclyClose(Conn_id Size_t, Error int32) int32 {
 	mtx.Lock()
 	defer func(){
@@ -144,7 +144,7 @@ func QuiclyClose(Conn_id Size_t, Error int32) int32 {
 	return __v
 }
 
-// QuiclyOutgoingMsgQueue function as declared in include/quicly_wrapper.h:34
+// QuiclyOutgoingMsgQueue function as declared in include/quicly_wrapper.h:35
 func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 {
 	mtx.Lock()
 	defer func(){
@@ -162,7 +162,7 @@ func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 
 	return __v
 }
 
-// QuiclyWriteStream function as declared in include/quicly_wrapper.h:36
+// QuiclyWriteStream function as declared in include/quicly_wrapper.h:37
 func QuiclyWriteStream(Conn_id Size_t, Stream_id Size_t, Msg []byte, Dgram_len Size_t) int32 {
 	mtx.Lock()
 	defer func(){

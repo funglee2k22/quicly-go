@@ -17,7 +17,8 @@ enum {
 
 struct iovec;
 
-extern int   QuiclyInitializeEngine( const char* certificate_file, const char* key_file );
+// API
+extern int   QuiclyInitializeEngine( const char* alpn, const char* certificate_file, const char* key_file );
 
 extern int   QuiclyCloseEngine();
 
@@ -35,6 +36,7 @@ extern int   QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgram, size_t* num
 
 extern int   QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram_len );
 
+// Callbacks
 extern void  goQuiclyOnStreamOpen(uint64_t conn_id, uint64_t stream_id);
 
 extern void  goQuiclyOnStreamClose(uint64_t conn_id, uint64_t stream_id, int error);

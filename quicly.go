@@ -24,7 +24,7 @@ func Initialize(options Options) int {
 		logger = *options.Logger
 	}
 
-	result := quiclylib.QuiclyInitializeEngine(options.CertificateFile, options.CertificateKey)
+	result := quiclylib.QuiclyInitializeEngine(options.ApplicationProtocol, options.CertificateFile, options.CertificateKey)
 	if result != errors.QUICLY_OK {
 		logger.Error().Msgf("Failed initialization: %v", result)
 		return result

@@ -51,6 +51,7 @@ func (s *QStream) init() {
 		s.streamInBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.streamOutBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.bufferUpdateCh = make(chan struct{}, 512)
+		s.closed.Store(false)
 		go s.channelsWatcher()
 	}
 }
@@ -60,13 +61,20 @@ func (s *QStream) ID() uint64 {
 }
 
 func (s *QStream) IsClosed() bool {
-	return s.closed.Load().(bool)
+	val := s.closed.Load()
+	if val == nil {
+		return true
+	}
+	return val.(bool)
 }
 
 var zeroTime = time.Time{}
 
 func (s *QStream) channelsWatcher() {
-	for {
+	if s.Logger.GetLevel() < log.DebugLevel {
+		return
+	}
+	for !s.IsClosed() {
 		<-time.After(5 * time.Millisecond)
 		s.Logger.Debug().Msgf("[stream:%v] in:%d buf:%d", s.id, len(s.bufferUpdateCh), s.streamInBuf.Len())
 	}
@@ -74,6 +82,10 @@ func (s *QStream) channelsWatcher() {
 
 func (s *QStream) Read(b []byte) (n int, err error) {
 	s.init()
+
+	if s.IsClosed() {
+		return 0, io.ErrClosedPipe
+	}
 
 	if s.readDeadline.IsZero() {
 		s.readDeadline = time.Now().Add(3 * time.Second)
@@ -113,8 +125,9 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 
 	if s.IsClosed() {
 		s.Logger.Debug().Msgf("STREAM OUT %d CLOSE", s.id)
-		return 0, io.EOF
+		return 0, io.ErrClosedPipe
 	}
+
 	if s.writeDeadline.IsZero() {
 		s.writeDeadline = time.Now().Add(3 * time.Second)
 	}
@@ -122,18 +135,22 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 		s.writeDeadline = zeroTime
 	}()
 
+	s.Logger.Info().Msgf("IN")
 	s.outBufferLock.Lock()
 	wr, _ := s.streamOutBuf.Write(b)
+	s.Logger.Info().Msgf("STREAM WRITE %d: %d", s.id, len(b))
 	s.outBufferLock.Unlock()
+	s.Logger.Info().Msgf("OUT")
 
 	s.Logger.Info().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
-
 	s.lastWrite = time.Now()
-	var client, _ = s.session.(*QClientSession)
-	pkt := &packet{
-		streamid: s.id,
+
+	pkt := &types.Packet{
+		Streamid: s.id,
+		DataLen:  len(b),
 	}
-	client.OutgoingQueue <- pkt
+	s.session.StreamPacket(pkt)
+
 	return wr, nil
 }
 
@@ -146,10 +163,12 @@ func (s *QStream) Close() error {
 	return nil
 }
 
-func (s *QStream) OnOpened() {}
+func (s *QStream) OnOpened() {
+	s.Logger.Info().Msgf("STREAM OPEN %d", s.id)
+}
 
 func (s *QStream) OnClosed() error {
-	s.Logger.Debug().Msgf("STREAM CLOSE %d", s.id)
+	s.Logger.Info().Msgf("STREAM CLOSE %d", s.id)
 	s.closed.Store(true)
 	return nil
 }

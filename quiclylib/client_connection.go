@@ -33,16 +33,23 @@ type QClientSession struct {
 
 	exclusiveLock sync.RWMutex
 
-	OutgoingQueue chan *packet
-	incomingQueue chan *packet
+	outgoingQueue chan *types.Packet
+	incomingQueue chan *types.Packet
+}
+
+func (s *QClientSession) StreamPacket(packet *types.Packet) {
+	if packet == nil {
+		return
+	}
+	s.outgoingQueue <- packet
 }
 
 func (s *QClientSession) init() {
 	if s.incomingQueue == nil {
 		s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
-		s.incomingQueue = make(chan *packet, 1024)
-		s.OutgoingQueue = make(chan *packet, 1024)
+		s.incomingQueue = make(chan *types.Packet, 1024)
+		s.outgoingQueue = make(chan *types.Packet, 1024)
 		s.streams = make(map[uint64]types.Stream)
 
 		go s.channelsWatcher()
@@ -57,7 +64,7 @@ func (s *QClientSession) channelsWatcher() {
 		case <-time.After(250 * time.Millisecond):
 			break
 		}
-		s.Logger.Info().Msgf("[conn:%v] in:%d out:%d str:%d", s.id, len(s.incomingQueue), len(s.OutgoingQueue), len(s.streams))
+		s.Logger.Debug().Msgf("[conn:%v] in:%d out:%d str:%d", s.id, len(s.incomingQueue), len(s.outgoingQueue), len(s.streams))
 	}
 }
 
@@ -95,10 +102,10 @@ func (s *QClientSession) connectionInHandler() {
 			}
 		}
 
-		pkt := &packet{
-			data:    buf[:n],
-			dataLen: n,
-			addr:    addr,
+		pkt := &types.Packet{
+			Data:       buf[:n],
+			DataLen:    n,
+			RetAddress: addr,
 		}
 		select {
 		case s.incomingQueue <- pkt:
@@ -129,12 +136,12 @@ func (s *QClientSession) connectionProcessHandler() {
 
 			var ptr_id bindings.Size_t = 0
 
-			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.data, bindings.Size_t(pkt.dataLen), &ptr_id)
+			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), &ptr_id)
 			if err != bindings.QUICLY_OK {
 				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
-					s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.dataLen, err)
+					s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.DataLen, err)
 				} else {
-					s.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", s.id, pkt.dataLen, err)
+					s.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", s.id, pkt.DataLen, err)
 				}
 			}
 
@@ -160,24 +167,24 @@ func (s *QClientSession) connectionWriteHandler() {
 
 	for {
 		select {
-		case pkt := <-s.OutgoingQueue:
+		case pkt := <-s.outgoingQueue:
 			if pkt == nil {
 				continue
 			}
-			//s.Logger.Info().Msgf("STREAM WRITE %d: %d - %v", pkt.streamid, pkt.dataLen, pkt.data[:pkt.dataLen])
+			//s.Logger.Info().Msgf("STREAM WRITE %d: %d - %v", pkt.Streamid, pkt.DataLen, pkt.data[:pkt.DataLen])
 
 			s.streamsLock.RLock()
-			var stream, _ = s.streams[pkt.streamid].(*QStream)
+			var stream, _ = s.streams[pkt.Streamid].(*QStream)
 			s.streamsLock.RUnlock()
 
 			stream.outBufferLock.Lock()
 			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-			s.Logger.Info().Msgf("STREAM WRITE %d: %d", pkt.streamid, len(data))
+			s.Logger.Info().Msgf("STREAM WRITE %d: %d", pkt.Streamid, len(data))
 
 			stream.streamOutBuf.Reset()
 			stream.outBufferLock.Unlock()
 
-			errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(pkt.streamid), data, bindings.Size_t(len(data)))
+			errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(pkt.Streamid), data, bindings.Size_t(len(data)))
 			if errcode != errors.QUICLY_OK {
 				s.Logger.Error().Msgf("%v quicly errorcode: %d", s.id, errcode)
 				continue
@@ -235,7 +242,7 @@ func (s *QClientSession) Close() error {
 
 	s.ctxCancel()
 	close(s.incomingQueue)
-	close(s.OutgoingQueue)
+	close(s.outgoingQueue)
 	_ = s.Conn.Close()
 
 	if s.OnConnectionClose != nil {
@@ -305,7 +312,6 @@ func (s *QClientSession) OpenStream() types.Stream {
 		id:      streamId,
 		Logger:  s.Logger,
 	}
-	st.closed.Store(false)
 
 	s.streamsLock.Lock()
 	defer s.streamsLock.Unlock()

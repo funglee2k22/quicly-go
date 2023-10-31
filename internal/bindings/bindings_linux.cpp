@@ -24,6 +24,8 @@ static void on_receive(quicly_stream_t *stream, size_t off, const void *src, siz
 static void on_stop_sending(quicly_stream_t *stream, int err);
 static void on_receive_reset(quicly_stream_t *stream, int err);
 
+static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
+
 /**
  * the QUIC context
  */
@@ -33,20 +35,27 @@ static quicly_context_t ctx;
  */
 static quicly_cid_plaintext_t next_cid;
 
+static char quicly_alpn[256] = "";
 static quicly_conn_t *conns_table[256] = {};
+
+static quicly_stream_open_t stream_open = { on_stream_open };
+static ptls_on_client_hello_t on_client_hello = {on_client_hello_cb};
 
 static ptls_context_t tlsctx = {
  .random_bytes = ptls_openssl_random_bytes,
  .get_time = &ptls_get_time,
  .key_exchanges = ptls_openssl_key_exchanges,
  .cipher_suites = ptls_openssl_cipher_suites,
+ .on_client_hello = &on_client_hello,
 };
-
-static quicly_stream_open_t stream_open = { on_stream_open };
 
 // ----- Startup ----- //
 
-int QuiclyInitializeEngine( const char* certificate_file, const char* key_file ) {
+int QuiclyInitializeEngine( const char* alpn, const char* certificate_file, const char* key_file ) {
+  // copy requested alpn
+  memset( quicly_alpn, '\0', sizeof(char) * 256 );
+  strncpy( quicly_alpn, alpn, 256 );
+
 //  /* setup quic context */
   ctx = quicly_spec_context;
   ctx.tls = &tlsctx;
@@ -95,6 +104,23 @@ int QuiclyCloseEngine() {
 }
 
 // ----- Callbacks ----- //
+
+static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_on_client_hello_parameters_t *params)
+{
+    int ret;
+
+    size_t i, j;
+    size_t alpn_len = strlen(quicly_alpn);
+    const ptls_iovec_t *y;
+    for (j = 0; j != params->negotiated_protocols.count; ++j) {
+        y = params->negotiated_protocols.list + j;
+        if (alpn_len == y->len && memcmp(quicly_alpn, y->base, alpn_len) == 0) {
+          ret = ptls_set_negotiated_protocol(tls, (const char *)quicly_alpn, alpn_len);
+          return ret;
+        }
+    }
+    return PTLS_ALERT_NO_APPLICATION_PROTOCOL;
+}
 
 static const quicly_stream_callbacks_t stream_callbacks = {
     on_destroy,
@@ -190,12 +216,25 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
     ctx.transport_params.max_idle_timeout = 3 * 1000;
     ctx.transport_params.max_streams_bidi = 256;
 
+    ptls_iovec_t proposed_alpn[] = {
+      { (uint8_t *)quicly_alpn, strlen(quicly_alpn) }
+    };
+    ptls_handshake_properties_t client_hs_prop = {
+      .client = {
+        .negotiated_protocols = {
+          .list = proposed_alpn,
+          .count = 1,
+        }
+      }
+    };
 
     /* initiate a connection, and open a stream */
     int ret = 0;
     if ((ret = quicly_connect(conns_table + i, &ctx,
                               _address, (struct sockaddr *)&address, NULL,
-                              &next_cid, ptls_iovec_init(NULL, 0), NULL, NULL, NULL)) != 0)
+                              &next_cid, ptls_iovec_init(NULL, 0),
+                              &client_hs_prop,
+                              NULL, NULL)) != 0)
     {
         fprintf(stderr, "quicly_connect failed:%d\n", ret);
         return QUICLY_ERROR_FAILED;
@@ -232,44 +271,35 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
     quicly_decoded_packet_t* decoded = NULL;
     /* split UDP datagram into multiple QUIC packets */
     while (off < dgram_len) {
-        printf("trace@%d\n", __LINE__ );
         free(decoded);
         decoded = NULL;
         decoded = (quicly_decoded_packet_t*)malloc( sizeof(quicly_decoded_packet_t) );
 
         if (quicly_decode_packet(&ctx, decoded, (const uint8_t *)msg, dgram_len-off, &off) == SIZE_MAX) {
             err = QUICLY_ERROR_FAILED;
-            printf("trace@%d\n", __LINE__ );
             break;
         }
 
         /* find the corresponding connection */
         for (i = 0; i < 256 && conns_table[i] != NULL; ++i)
             if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, decoded)) {
-                printf("trace@%d %d\n", __LINE__, i );
                 break;
             }
         if( i >= 256 ) {
             err = QUICLY_ERROR_FAILED;
-            printf("trace@%d\n", __LINE__ );
         }
 
         int ret = 0;
         if (conns_table[i] != NULL) {
-            printf("trace@%d\n", __LINE__ );
             /* let the current connection handle ingress packets */
             ret = quicly_receive(conns_table[i], NULL, (struct sockaddr*)&address, decoded);
-            printf("trace@%d %d\n", __LINE__, ret );
 
         } else if (!is_client) {
             if( id != NULL ) {
-            printf("trace@%d\n", __LINE__ );
               *id = i;
             }
-            printf("trace@%d\n", __LINE__ );
             /* assume that the packet is a new connection */
             ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, decoded, NULL, &next_cid, NULL, NULL);
-            printf("trace@%d %d %p %p\n", __LINE__, ret, conns_table + *id, conns_table[*id] );
         }
         if( ret != 0 ) {
           *id = 0;
@@ -306,11 +336,12 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
 //      } break;
     case QUICLY_ERROR_FREE_CONNECTION:
         /* connection has been closed, free, and exit when running as a client */
+        printf("quicly_send returned %d, QUICLY_ERROR_FREE_CONNECTION\n", ret);
         quicly_free(conns_table[id]);
         conns_table[id] = NULL;
         break;
     default:
-        fprintf(stderr, "quicly_send returned %d\n", ret);
+        printf("quicly_send returned %d\n", ret);
         return QUICLY_ERROR_FAILED;
     }
 

@@ -6,8 +6,8 @@
 package bindings
 
 /*
-#cgo LDFLAGS: C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
-#cgo CPPFLAGS: -DWIN32 -IC:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
+#cgo LDFLAGS: c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
+#cgo CPPFLAGS: -DWIN32 -Ic:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
 #include "quicly.h"
 #include "quicly_wrapper.h"
 #include "quicly/streambuf.h"
@@ -39,6 +39,16 @@ const (
 
 const ()
 
+const ()
+
+const ()
+
+const ()
+
+const ()
+
+const ()
+
 const (
 	// QUICLY_OK as declared in include/quicly_wrapper.h:11
 	QUICLY_OK = iota
@@ -51,13 +61,3 @@ const (
 	// QUICLY_ERROR_NOT_OPEN as declared in include/quicly_wrapper.h:15
 	QUICLY_ERROR_NOT_OPEN = 4
 )
-
-const ()
-
-const ()
-
-const ()
-
-const ()
-
-const ()
