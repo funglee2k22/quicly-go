@@ -24,14 +24,20 @@ import (
 var mtx sync.Mutex
 
 // QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:21
-func QuiclyInitializeEngine(Alpn string, Certificate_file string, Key_file string) int32 {
+func QuiclyInitializeEngine(Alpn string, Certificate_file string, Key_file string, Idle_timeout_ms uint64) int32 {
+	mtx.Lock()
+	defer func() {
+		mtx.Unlock()
+	}()
 	Alpn = safeString(Alpn)
 	cAlpn, cAlpnAllocMap := unpackPCharString(Alpn)
 	Certificate_file = safeString(Certificate_file)
 	cCertificate_file, cCertificate_fileAllocMap := unpackPCharString(Certificate_file)
 	Key_file = safeString(Key_file)
 	cKey_file, cKey_fileAllocMap := unpackPCharString(Key_file)
-	__ret := C.QuiclyInitializeEngine(cAlpn, cCertificate_file, cKey_file)
+	cIdle_timeout_ms, cIdle_timeout_msAllocMap := (C.uint64_t)(Idle_timeout_ms), cgoAllocsUnknown
+	__ret := C.QuiclyInitializeEngine(cAlpn, cCertificate_file, cKey_file, cIdle_timeout_ms)
+	runtime.KeepAlive(cIdle_timeout_msAllocMap)
 	runtime.KeepAlive(Key_file)
 	runtime.KeepAlive(cKey_fileAllocMap)
 	runtime.KeepAlive(Certificate_file)

@@ -14,10 +14,10 @@ const (
 	SMALL_BUFFER_SIZE = 4 * 1024
 )
 
-func QuiclyInitializeEngine(alpn, certfile, certkey string) int {
+func QuiclyInitializeEngine(alpn, certfile, certkey string, idle_timeout uint64) int {
 	bindings.ResetRegistry()
 
-	result := bindings.QuiclyInitializeEngine(alpn, certfile, certkey)
+	result := bindings.QuiclyInitializeEngine(alpn, certfile, certkey, idle_timeout)
 	return int(result)
 }
 

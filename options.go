@@ -11,6 +11,7 @@ type Options struct {
 	ApplicationProtocol string
 	CertificateFile     string
 	CertificateKey      string
+	IdleTimeoutMs       uint64
 }
 
 func (o Options) String() string {

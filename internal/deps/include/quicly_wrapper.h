@@ -18,7 +18,7 @@ enum {
 struct iovec;
 
 // API
-extern int   QuiclyInitializeEngine( const char* alpn, const char* certificate_file, const char* key_file );
+extern int   QuiclyInitializeEngine( const char* alpn, const char* certificate_file, const char* key_file, const uint64_t idle_timeout_ms );
 
 extern int   QuiclyCloseEngine();
 

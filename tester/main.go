@@ -65,6 +65,7 @@ func main() {
 		CertificateFile:     *certFile,
 		CertificateKey:      *certKey,
 		ApplicationProtocol: "qpep_quicly",
+		IdleTimeoutMs:       3000,
 	}
 
 	logger.Info().Msgf("Options: %v", options)
@@ -309,6 +310,7 @@ func handleServerStream(stream net.Conn) {
 	for {
 		logger.Info().Msgf("Read Stream")
 
+		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
 		logger.Info().Msgf("err: %v", err)
 		if err != nil {
@@ -322,6 +324,7 @@ func handleServerStream(stream net.Conn) {
 
 		logger.Info().Msgf("Write Stream")
 
+		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err = stream.Write(data[:n])
 		if err != nil {
 			if err != io.EOF {
@@ -348,6 +351,7 @@ func handleClientStream(stream net.Conn) {
 	for scan.Scan() {
 		logger.Info().Msgf("Write Stream")
 
+		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Write(scan.Bytes())
 		if err != nil {
 			if err != io.EOF {
@@ -360,6 +364,7 @@ func handleClientStream(stream net.Conn) {
 
 		logger.Info().Msgf("Read Stream")
 
+		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err = stream.Read(data)
 		if err != nil {
 			if err != io.EOF {
