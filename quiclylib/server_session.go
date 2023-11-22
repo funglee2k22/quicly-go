@@ -53,9 +53,8 @@ func (s *QServerSession) init() {
 
 	s.connections = make(map[uint64]*QServerConnection)
 
-	s.connectionsWaiter.Add(2)
+	s.connectionsWaiter.Add(1)
 	go s.connectionInHandler()
-	go s.channelsWatcher()
 	s.started = true
 }
 
@@ -109,20 +108,6 @@ func (s *QServerSession) connDelete(id uint64) {
 	delete(s.connections, deleteHash)
 }
 
-func (s *QServerSession) channelsWatcher() {
-	defer s.connectionsWaiter.Done()
-
-	for {
-		select {
-		case <-s.Ctx.Done():
-			return
-		case <-time.After(250 * time.Millisecond):
-			break
-		}
-		s.Logger.Debug().Msgf("[conn:%v] str:%d", s.id, len(s.connections))
-	}
-}
-
 func (s *QServerSession) connectionInHandler() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -131,6 +116,7 @@ func (s *QServerSession) connectionInHandler() {
 		s.ctxCancel()
 		runtime.UnlockOSThread()
 		s.connectionsWaiter.Done()
+		s.Logger.Info().Msgf("SESSION IN END")
 	}()
 
 	var buffList = make([][]byte, 0, 128)

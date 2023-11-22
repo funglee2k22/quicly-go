@@ -152,6 +152,7 @@ func (r *QServerConnection) connProcess() {
 			debug.PrintStack()
 			_ = r.Close()
 		}
+		r.Logger.Info().Msgf("CONN PROCESS END")
 	}()
 
 	sleepCounter := 0
@@ -209,6 +210,7 @@ func (r *QServerConnection) connOutgoing() {
 			debug.PrintStack()
 			_ = r.Close()
 		}
+		r.Logger.Info().Msgf("CONN OUTGOING END")
 	}()
 
 	sleepCounter := 0
