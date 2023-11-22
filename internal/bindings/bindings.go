@@ -6,8 +6,8 @@
 package bindings
 
 /*
-#cgo LDFLAGS: c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a c:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
-#cgo CPPFLAGS: -DWIN32 -Ic:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
+#cgo LDFLAGS: C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
+#cgo CPPFLAGS: -DWIN32 -IC:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
 #include "quicly.h"
 #include "quicly_wrapper.h"
 #include "quicly/streambuf.h"
@@ -21,14 +21,13 @@ import (
 	"unsafe"
 )
 
-var mtx sync.Mutex
+var mtx_bindings sync.Mutex
 
 // QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:21
 func QuiclyInitializeEngine(Alpn string, Certificate_file string, Key_file string, Idle_timeout_ms uint64) int32 {
-	mtx.Lock()
-	defer func() {
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	Alpn = safeString(Alpn)
 	cAlpn, cAlpnAllocMap := unpackPCharString(Alpn)
 	Certificate_file = safeString(Certificate_file)
@@ -50,10 +49,9 @@ func QuiclyInitializeEngine(Alpn string, Certificate_file string, Key_file strin
 
 // QuiclyCloseEngine function as declared in include/quicly_wrapper.h:23
 func QuiclyCloseEngine() int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	__ret := C.QuiclyCloseEngine()
 	__v := (int32)(__ret)
 	return __v
@@ -61,10 +59,9 @@ func QuiclyCloseEngine() int32 {
 
 // QuiclyProcessMsg function as declared in include/quicly_wrapper.h:25
 func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, Dgram_len Size_t, Id *Size_t) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	cIs_client, cIs_clientAllocMap := (C.int)(Is_client), cgoAllocsUnknown
 	Address = safeString(Address)
 	cAddress, cAddressAllocMap := unpackPCharString(Address)
@@ -86,10 +83,9 @@ func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, D
 
 // QuiclyConnect function as declared in include/quicly_wrapper.h:27
 func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	Address = safeString(Address)
 	cAddress, cAddressAllocMap := unpackPCharString(Address)
 	cPort, cPortAllocMap := (C.int)(Port), cgoAllocsUnknown
@@ -105,10 +101,9 @@ func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
 
 // QuiclyOpenStream function as declared in include/quicly_wrapper.h:29
 func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (*C.size_t)(unsafe.Pointer(Stream_id)), cgoAllocsUnknown
 	__ret := C.QuiclyOpenStream(cConn_id, cStream_id)
@@ -120,10 +115,9 @@ func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
 
 // QuiclyCloseStream function as declared in include/quicly_wrapper.h:31
 func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
-	//mtx.Lock()
-	defer func(){
-		//mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
 	cError, cErrorAllocMap := (C.int)(Error), cgoAllocsUnknown
@@ -137,10 +131,9 @@ func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
 
 // QuiclyClose function as declared in include/quicly_wrapper.h:33
 func QuiclyClose(Conn_id Size_t, Error int32) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cError, cErrorAllocMap := (C.int)(Error), cgoAllocsUnknown
 	__ret := C.QuiclyClose(cConn_id, cError)
@@ -152,10 +145,9 @@ func QuiclyClose(Conn_id Size_t, Error int32) int32 {
 
 // QuiclyOutgoingMsgQueue function as declared in include/quicly_wrapper.h:35
 func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	cId, cIdAllocMap := (C.size_t)(Id), cgoAllocsUnknown
 	cDgram, cDgramAllocMap := unpackArgSIovec(Dgram)
 	cNum_dgrams, cNum_dgramsAllocMap := (*C.size_t)(unsafe.Pointer(Num_dgrams)), cgoAllocsUnknown
@@ -170,10 +162,9 @@ func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 
 
 // QuiclyWriteStream function as declared in include/quicly_wrapper.h:37
 func QuiclyWriteStream(Conn_id Size_t, Stream_id Size_t, Msg []byte, Dgram_len Size_t) int32 {
-	mtx.Lock()
-	defer func(){
-		mtx.Unlock()
-	}()
+	mtx_bindings.Lock()
+	defer mtx_bindings.Unlock()
+
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
 	cMsg, cMsgAllocMap := copyPCharBytes((*sliceHeader)(unsafe.Pointer(&Msg)))

@@ -13,7 +13,7 @@ extern "C" {
   #include <arpa/inet.h>
 }
 
-#define MAX_CONNECTIONS 256
+#define MAX_CONNECTIONS 8192
 
 static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void on_destroy(quicly_stream_t *stream, int err);

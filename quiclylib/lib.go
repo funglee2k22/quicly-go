@@ -5,8 +5,8 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 )
 
-var _ types.Session = &QServerSession{}
-var _ types.Session = &QClientSession{}
+var _ types.ServerSession = &QServerSession{}
+var _ types.ClientSession = &QClientSession{}
 var _ types.Stream = &QStream{}
 
 const (

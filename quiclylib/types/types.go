@@ -14,11 +14,7 @@ type Callbacks struct {
 }
 
 type Session interface {
-	net.Listener
-
 	ID() uint64
-
-	OpenStream() Stream
 
 	OnStreamOpen(uint64)
 	OnStreamClose(uint64, int)
@@ -26,6 +22,31 @@ type Session interface {
 	GetStream(uint64) Stream
 
 	StreamPacket(*Packet)
+
+	// Addr returns the listener's network address.
+	Addr() net.Addr
+
+	// Close closes the listener.
+	// Any blocked Accept operations will be unblocked and return errors.
+	Close() error
+}
+
+type ServerSession interface {
+	// Accept waits for and returns the next connection to the listener.
+	Accept() (ServerConnection, error)
+}
+
+type ServerConnection interface {
+	// Accept waits for and returns the next connection to the listener.
+	Accept() (Stream, error)
+
+	Session
+}
+
+type ClientSession interface {
+	OpenStream() Stream
+
+	Session
 }
 
 type Stream interface {

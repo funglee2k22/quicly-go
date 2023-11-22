@@ -20,7 +20,7 @@ extern "C" {
   #include "openssl/err.h"
 }
 
-#define MAX_CONNECTIONS 256
+#define MAX_CONNECTIONS 8192
 
 static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void on_destroy(quicly_stream_t *stream, int err);
@@ -134,9 +134,11 @@ static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_o
     // the server, error if none match or empty
     size_t i, j;
     size_t alpn_len = strlen(quicly_alpn);
+    printf("stream requested protocol: %s\n", quicly_alpn);
     const ptls_iovec_t *y;
     for (j = 0; j != params->negotiated_protocols.count; ++j) {
         y = params->negotiated_protocols.list + j;
+        printf(">> protocol check: %s == %s\n", quicly_alpn, y->base);
         if (alpn_len == y->len && memcmp(quicly_alpn, y->base, alpn_len) == 0) {
           ret = ptls_set_negotiated_protocol(tls, (const char *)quicly_alpn, alpn_len);
           return ret;

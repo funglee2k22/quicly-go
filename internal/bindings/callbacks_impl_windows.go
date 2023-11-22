@@ -21,9 +21,15 @@ func ResetRegistry() {
 }
 
 func RegisterConnection(s types.Session, id uint64) {
+	if s == nil {
+		return
+	}
 	callbackLock.Lock()
 	defer callbackLock.Unlock()
-	connectionsRegistry[id] = s
+	if connectionsRegistry[id] != s {
+		fmt.Printf("registered connection id: %d index: %d\n", s.ID(), id)
+		connectionsRegistry[id] = s
+	}
 }
 
 func GetConnection(id uint64) (types.Session, bool) {
@@ -36,6 +42,7 @@ func GetConnection(id uint64) (types.Session, bool) {
 func RemoveConnection(id uint64) {
 	callbackLock.Lock()
 	defer callbackLock.Unlock()
+	fmt.Printf("removed connection id: %d index: %d\n", connectionsRegistry[id].ID(), id)
 	delete(connectionsRegistry, id)
 }
 

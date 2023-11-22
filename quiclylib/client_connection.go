@@ -220,6 +220,8 @@ func (s *QClientSession) flushOutgoingQueue() {
 
 		data := bindings.IovecToBytes(packets_buf[i])
 
+		_ = s.Conn.SetWriteDeadline(time.Now().Add(2 * time.Millisecond))
+
 		n, err := s.Conn.Write(data)
 		s.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
 	}
@@ -294,7 +296,8 @@ func (s *QClientSession) connect() int {
 }
 
 func (s *QClientSession) OpenStream() types.Stream {
-	if s.connect() != errors.QUICLY_OK {
+	if err := s.connect(); err != errors.QUICLY_OK {
+		s.Logger.Error().Msgf("connect error: %d", err)
 		return nil
 	}
 
