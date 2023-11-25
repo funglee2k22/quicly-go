@@ -52,6 +52,7 @@ func (s *QServerSession) init() {
 	s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
 	s.connections = make(map[uint64]*QServerConnection)
+	s.connAcceptQueue = make(chan *QServerConnection, 32)
 
 	s.connectionsWaiter.Add(1)
 	go s.connectionInHandler()
@@ -77,6 +78,7 @@ func (s *QServerSession) enqueueConnAccept(conn *QServerConnection) {
 
 func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 	addrHash := addrToHash(addr)
+	s.Logger.Debug().Msgf("HASH: %v -> %v", addr, addrHash)
 
 	s.enterCritical()
 	var targetHandler = s.connections[addrHash]
@@ -84,10 +86,10 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 
 	if targetHandler == nil {
 		targetHandler = &QServerConnection{}
-		targetHandler.init(s, addr)
+		targetHandler.init(s, addr, addrHash)
 
 		s.enterCritical()
-		s.connections[targetHandler.id] = targetHandler
+		s.connections[targetHandler.returnHash] = targetHandler
 		s.exitCritical()
 	}
 	return targetHandler
@@ -106,6 +108,7 @@ func (s *QServerSession) connDelete(id uint64) {
 		}
 	}
 	delete(s.connections, deleteHash)
+	s.Logger.Debug().Msgf("CONN DELETE %d", id)
 }
 
 func (s *QServerSession) connectionInHandler() {
@@ -116,7 +119,7 @@ func (s *QServerSession) connectionInHandler() {
 		s.ctxCancel()
 		runtime.UnlockOSThread()
 		s.connectionsWaiter.Done()
-		s.Logger.Info().Msgf("SESSION IN END")
+		s.Logger.Debug().Msgf("SESSION IN END")
 	}()
 
 	var buffList = make([][]byte, 0, 128)
@@ -147,7 +150,7 @@ func (s *QServerSession) connectionInHandler() {
 		}
 		sleepCounter++
 
-		_ = s.NetConn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+		_ = s.NetConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 
 		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {
@@ -158,18 +161,16 @@ func (s *QServerSession) connectionInHandler() {
 		buf := buffList[0]
 		buffList = buffList[1:]
 
-		s.Logger.Info().Msgf("CONN READ: %d (%v)", n, addr)
+		s.Logger.Debug().Msgf("CONN READ: %d (%v)", n, addr)
 		pkt := &types.Packet{
 			Data:       buf[:n],
 			DataLen:    n,
 			RetAddress: addr,
 		}
 
-		s.Logger.Info().Msgf("CONN GET HANDLER")
 		conn := s.connectionAdd(addr)
-		s.Logger.Info().Msgf("CONN HANDLER")
 		conn.receiveIncomingPacket(pkt)
-		s.Logger.Info().Msgf("CONN READ SENT: %d", n)
+		s.Logger.Debug().Msgf("CONN READ SENT: %d", n)
 	}
 }
 

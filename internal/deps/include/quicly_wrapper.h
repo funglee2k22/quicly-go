@@ -12,7 +12,10 @@ enum {
   QUICLY_ERROR_NOTINITILIZED = 1,  //!< InitializeWinDivertEngine was not called previously
   QUICLY_ERROR_ALREADY_INIT  = 2,  //!< InitializeWinDivertEngine called again before CloseWinDivertEngine
   QUICLY_ERROR_FAILED = 3,         //!< Operation failed
-  QUICLY_ERROR_NOT_OPEN = 4,       //!< Connection is not open so no state available
+  QUICLY_ERROR_DECODE_FAILED = 4,         //!< Operation failed
+  QUICLY_ERROR_DESTINATION_NOT_FOUND = 5,         //!< Operation failed
+  QUICLY_ERROR_NOT_OPEN = 6,       //!< Connection is not open so no state available
+  QUICLY_ERROR_STREAM_NOT_FOUND = 7,         //!< Operation failed
 };
 
 struct iovec;

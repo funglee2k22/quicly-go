@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -49,7 +50,19 @@ func (q qgoAdapter) RemoteAddr() net.Addr {
 	return q.remip
 }
 
+var startPrefix = 0
+
+func removePrefixCaller(pc uintptr, file string, line int) string {
+	if startPrefix == 0 {
+		startPrefix = strings.Index(file, "quicly-go/")
+		startPrefix += len("quicly-go/")
+	}
+	return fmt.Sprintf("%s:%d", file[startPrefix:], line)
+}
+
 func init() {
+	log.CallerMarshalFunc = removePrefixCaller
+
 	logger = log.New(os.Stdout).Level(log.InfoLevel).
 		With().Timestamp().
 		Caller().
@@ -309,7 +322,7 @@ func runAsClient_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 		return
 	}
 
-	defer logger.Info().Msgf("END: runAsServer_quicly")
+	defer logger.Info().Msgf("END: runAsClient_quicly")
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
@@ -342,6 +355,7 @@ func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	defer logger.Info().Msgf("END: runAsServer_quicly")
 
 	fulldata := ctx.Value("Payload").(*bytes.Buffer)
+	dumpDataToFile("server", fulldata)
 	for {
 		logger.Info().Msgf("accepting connection...")
 		conn, err := serverListener.Accept()
@@ -385,11 +399,10 @@ func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
 
 	data := make([]byte, 4096)
 	for {
-		logger.Info().Msgf("Read Stream")
+		logger.Debug().Msgf("Read Stream")
 
 		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
-		logger.Info().Msgf("err: %v", err)
 		if err != nil {
 			if err != io.EOF {
 				logger.Err(err).Send()
@@ -397,7 +410,9 @@ func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
 			}
 			continue
 		}
-		logger.Info().Msgf("Read(%d): %v\n", n, string(data[:n]))
+		if n > 0 {
+			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
+		}
 	}
 }
 
@@ -413,7 +428,7 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 
 	data := make([]byte, 4096)
 	for {
-		logger.Info().Msgf("Write Stream")
+		logger.Debug().Msgf("Write Stream")
 
 		n, err := buffer.Read(data)
 		if err != nil {
@@ -429,11 +444,19 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 			}
 			continue
 		}
-		logger.Info().Msgf("Write(%d): %v\n", n, string(data[:n]))
+		logger.Info().Msgf("Write(%d): %v", n, string(data[:n]))
 	}
 }
 
+func dumpDataToFile(prefix string, buf *bytes.Buffer) {
+	name := fmt.Sprintf("%s_%v.bin", prefix, time.Now().Unix())
+	_ = os.WriteFile(name, buf.Bytes(), 0777)
+
+	logger.Info().Msgf("RECV DATA dumped to: %s (len: %d)", name, buf.Len())
+}
+
 func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
+	buf := bytes.NewBuffer(make([]byte, 0, 4096))
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error().Msgf("err: %v", err)
@@ -442,6 +465,7 @@ func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
 		wg.Done()
 		logger.Info().Msgf("END: handleClientStream_read")
 	}()
+	defer dumpDataToFile("client", buf)
 
 	var lastread = time.Now().Add(3 * time.Second)
 	data := make([]byte, 4096)
@@ -459,7 +483,10 @@ func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
 			continue
 		}
 		lastread = time.Now().Add(3 * time.Second)
-		logger.Info().Msgf("Read(%d): %v\n", n, string(data[:n]))
+		if n > 0 {
+			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
+			buf.Write(data[:n])
+		}
 	}
 }
 
@@ -486,6 +513,6 @@ func handleClientStream_write(wg *sync.WaitGroup, stream net.Conn) {
 			}
 			continue
 		}
-		logger.Info().Msgf("Write(%d): %v\n", n, scan.Text())
+		logger.Info().Msgf("Write(%d): %v", n, scan.Text())
 	}
 }

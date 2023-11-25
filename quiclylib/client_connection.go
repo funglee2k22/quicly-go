@@ -179,7 +179,7 @@ func (s *QClientSession) connectionWriteHandler() {
 
 			stream.outBufferLock.Lock()
 			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-			s.Logger.Info().Msgf("STREAM WRITE %d: %d", pkt.Streamid, len(data))
+			s.Logger.Debug().Msgf("STREAM WRITE %d: %d", pkt.Streamid, len(data))
 
 			stream.streamOutBuf.Reset()
 			stream.outBufferLock.Unlock()

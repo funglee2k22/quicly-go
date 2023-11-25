@@ -19,6 +19,12 @@ const (
 	QUICLY_ERROR_ALREADY_INIT = 2
 	// QUICLY_ERROR_FAILED as declared in include/quicly_wrapper.h:14
 	QUICLY_ERROR_FAILED = 3
-	// QUICLY_ERROR_NOT_OPEN as declared in include/quicly_wrapper.h:15
-	QUICLY_ERROR_NOT_OPEN = 4
+	// QUICLY_ERROR_DECODE_FAILED as declared in include/quicly_wrapper.h:15
+	QUICLY_ERROR_DECODE_FAILED = 4
+	// QUICLY_ERROR_DESTINATION_NOT_FOUND as declared in include/quicly_wrapper.h:16
+	QUICLY_ERROR_DESTINATION_NOT_FOUND = 5
+	// QUICLY_ERROR_NOT_OPEN as declared in include/quicly_wrapper.h:17
+	QUICLY_ERROR_NOT_OPEN = 6
+	// QUICLY_ERROR_STREAM_NOT_FOUND as declared in include/quicly_wrapper.h:18
+	QUICLY_ERROR_STREAM_NOT_FOUND = 7
 )

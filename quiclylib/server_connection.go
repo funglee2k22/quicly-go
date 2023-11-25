@@ -25,6 +25,7 @@ type QServerConnection struct {
 	started    bool
 	session    *QServerSession
 	returnAddr *net.UDPAddr
+	returnHash uint64
 
 	streams           map[uint64]types.Stream
 	streamsLock       sync.RWMutex
@@ -43,12 +44,31 @@ const (
 
 var _ types.Session = &QServerConnection{}
 
-func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr) {
+func (r *QServerConnection) enterCritical(readonly bool) {
+	//r.Logger.Warn().Msgf("Enter Critical section >>")
+	if readonly {
+		r.streamsLock.RLock()
+	} else {
+		r.streamsLock.Lock()
+	}
+	//r.Logger.Warn().Msgf("Enter Critical section <<")
+}
+func (r *QServerConnection) exitCritical(readonly bool) {
+	//r.Logger.Warn().Msgf("Exit Critical section >>")
+	if readonly {
+		r.streamsLock.RUnlock()
+	} else {
+		r.streamsLock.Unlock()
+	}
+	//r.Logger.Warn().Msgf("Exit Critical section <<")
+}
+
+func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, addrHash uint64) {
 	if r.started {
 		return
 	}
 
-	session.Logger.Info().Msgf("Client handler init: %v / %v", session, addr)
+	session.Logger.Info().Msgf("Server handler init: %v", addr)
 
 	if session == nil || addr == nil {
 		panic(errors.QUICLY_ERROR_FAILED)
@@ -59,12 +79,13 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr) {
 	r.NetConn = session.NetConn
 	r.Logger = session.Logger
 	r.returnAddr = addr
+	r.returnHash = addrHash
 
 	r.streams = make(map[uint64]types.Stream)
-	r.streamAcceptQueue = make(chan types.Stream)
+	r.streamAcceptQueue = make(chan types.Stream, 32)
 
-	r.incomingQueue = make(chan *types.Packet)
-	r.outgoingQueue = make(chan *types.Packet)
+	r.incomingQueue = make(chan *types.Packet, 32)
+	r.outgoingQueue = make(chan *types.Packet, 32)
 
 	r.routinesWaiter.Add(2)
 	r.started = true
@@ -110,9 +131,9 @@ func (r *QServerConnection) OnStreamOpen(streamId uint64) {
 		id:      streamId,
 		Logger:  r.Logger,
 	}
-	r.streamsLock.Lock()
+	r.enterCritical(false)
 	r.streams[streamId] = st
-	r.streamsLock.Unlock()
+	r.exitCritical(false)
 
 	r.streamAcceptQueue <- st
 
@@ -129,9 +150,9 @@ func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
 
 	_ = st.OnClosed()
 
-	r.streamsLock.Lock()
+	r.enterCritical(false)
 	delete(r.streams, streamId)
-	r.streamsLock.Unlock()
+	r.exitCritical(false)
 
 	if r.session.OnStreamCloseCallback != nil {
 		r.session.OnStreamCloseCallback(st, code)
@@ -139,8 +160,8 @@ func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
 }
 
 func (r *QServerConnection) GetStream(id uint64) types.Stream {
-	r.streamsLock.Lock()
-	defer r.streamsLock.Unlock()
+	r.enterCritical(false)
+	defer r.exitCritical(false)
 	return r.streams[id]
 }
 
@@ -152,7 +173,7 @@ func (r *QServerConnection) connProcess() {
 			debug.PrintStack()
 			_ = r.Close()
 		}
-		r.Logger.Info().Msgf("CONN PROCESS END")
+		r.Logger.Debug().Msgf("CONN PROCESS END")
 	}()
 
 	sleepCounter := 0
@@ -167,10 +188,10 @@ func (r *QServerConnection) connProcess() {
 		select {
 		case pkt := <-r.incomingQueue:
 			if pkt == nil {
-				r.Logger.Error().Msgf("HANDLER PROC ERR %v", pkt)
+				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
 				break
 			}
-			r.Logger.Info().Msgf("HANDLER PROC %d: %d", pkt.Streamid, pkt.DataLen)
+			r.Logger.Debug().Msgf("CONN PROC %d: %d", pkt.Streamid, pkt.DataLen)
 
 			addr, port := pkt.Address()
 
@@ -210,7 +231,7 @@ func (r *QServerConnection) connOutgoing() {
 			debug.PrintStack()
 			_ = r.Close()
 		}
-		r.Logger.Info().Msgf("CONN OUTGOING END")
+		r.Logger.Debug().Msgf("CONN OUTGOING END")
 	}()
 
 	sleepCounter := 0
@@ -228,22 +249,20 @@ func (r *QServerConnection) connOutgoing() {
 				continue
 			}
 
-			r.streamsLock.RLock()
+			r.enterCritical(true)
 			var stream, _ = r.streams[pkt.Streamid].(*QStream)
-			r.streamsLock.RUnlock()
+			r.exitCritical(true)
 			if stream == nil {
-				r.Logger.Error().Msgf("HANDLER WRITE ERR: no stream %d", pkt.Streamid)
+				r.Logger.Error().Msgf("CONN WRITE ERR: no stream %d", pkt.Streamid)
 				return
 			}
 
-			r.Logger.Info().Msgf("IN 2")
 			stream.outBufferLock.Lock()
 			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-			r.Logger.Info().Msgf("HANDLER WRITE %d: %d", pkt.Streamid, pkt.DataLen)
+			r.Logger.Debug().Msgf("CONN WRITE %d: %d", pkt.Streamid, pkt.DataLen)
 
 			stream.streamOutBuf.Reset()
 			stream.outBufferLock.Unlock()
-			r.Logger.Info().Msgf("OUT 2")
 
 			errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.session.ID()), bindings.Size_t(pkt.Streamid), data, bindings.Size_t(len(data)))
 			if errcode != errors.QUICLY_OK {
@@ -272,7 +291,6 @@ func (r *QServerConnection) flushOutgoingQueue() {
 	switch ret {
 	case bindings.QUICLY_ERROR_FREE_CONNECTION:
 		r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_FREE_CONNECTION", ret)
-		// bindings.RemoveConnection(r.id)
 		return
 	default:
 		r.Logger.Debug().Msgf("QUICLY Send failed: %v", ret)
@@ -289,14 +307,14 @@ func (r *QServerConnection) flushOutgoingQueue() {
 		_ = r.NetConn.SetWriteDeadline(time.Now().Add(2 * time.Millisecond))
 
 		n, err := r.NetConn.WriteToUDP(data, r.returnAddr)
-		r.Logger.Info().Msgf("SEND packet of len %d [%v]", n, err)
+		r.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
 	}
 }
 
 // --- Listener interface --- //
 
 func (r *QServerConnection) Accept() (types.Stream, error) {
-	defer r.Logger.Info().Msgf("ServerConnection terminated")
+	defer r.Logger.Debug().Msgf("ServerConnection terminated")
 
 	for {
 		select {
@@ -318,11 +336,11 @@ func (r *QServerConnection) Close() error {
 	r.Logger.Info().Msgf("Closing stream %d...", r.id)
 	r.cancelFunc()
 
-	r.streamsLock.Lock()
+	r.enterCritical(false)
 	for _, stream := range r.streams {
 		stream.Close()
 	}
-	r.streamsLock.Unlock()
+	r.exitCritical(false)
 
 	r.routinesWaiter.Wait()
 	close(r.incomingQueue)

@@ -52,7 +52,6 @@ func (s *QStream) init() {
 		s.streamOutBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.bufferUpdateCh = make(chan struct{}, 512)
 		s.closed.Store(false)
-		go s.channelsWatcher()
 	}
 }
 
@@ -69,16 +68,6 @@ func (s *QStream) IsClosed() bool {
 }
 
 var zeroTime = time.Time{}
-
-func (s *QStream) channelsWatcher() {
-	if s.Logger.GetLevel() < log.DebugLevel {
-		return
-	}
-	for !s.IsClosed() {
-		<-time.After(5 * time.Millisecond)
-		s.Logger.Debug().Msgf("[stream:%v] in:%d buf:%d", s.id, len(s.bufferUpdateCh), s.streamInBuf.Len())
-	}
-}
 
 func (s *QStream) Read(b []byte) (n int, err error) {
 	s.init()
@@ -98,14 +87,14 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	case <-s.bufferUpdateCh:
 		s.inBufferLock.Lock()
 		wr, _ := s.streamInBuf.Read(b)
-		s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
+		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
 		s.inBufferLock.Unlock()
 		return wr, nil
 
 	case <-time.After(time.Until(s.readDeadline)):
 		s.inBufferLock.Lock()
 		wr, _ := s.streamInBuf.Read(b)
-		s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
+		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
 		s.inBufferLock.Unlock()
 		if wr > 0 {
 			return wr, nil
@@ -135,14 +124,11 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 		s.writeDeadline = zeroTime
 	}()
 
-	s.Logger.Info().Msgf("IN")
 	s.outBufferLock.Lock()
 	wr, _ := s.streamOutBuf.Write(b)
-	s.Logger.Info().Msgf("STREAM WRITE %d: %d", s.id, len(b))
 	s.outBufferLock.Unlock()
-	s.Logger.Info().Msgf("OUT")
 
-	s.Logger.Info().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
+	s.Logger.Debug().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
 	s.lastWrite = time.Now()
 
 	pkt := &types.Packet{
@@ -186,7 +172,7 @@ func (s *QStream) OnReceived(data []byte, dataLen int) {
 	s.streamInBuf.Write(data[:dataLen])
 	s.inBufferLock.Unlock()
 
-	s.Logger.Info().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
+	s.Logger.Debug().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
 
 	receivedCounter++
 
