@@ -396,7 +396,7 @@ int QuiclyOpenStream( size_t conn_id, size_t* stream_id )
 int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
 {
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
-d        return QUICLY_ERROR_NOT_OPEN;
+        return QUICLY_ERROR_NOT_OPEN;
     }
 
     quicly_stream_t *stream = quicly_get_stream(conns_table[conn_id], stream_id);
