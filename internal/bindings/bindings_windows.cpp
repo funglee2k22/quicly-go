@@ -89,7 +89,7 @@ int QuiclyInitializeEngine( const char* alpn, const char* certificate_file,
   int ret;
   if ((ret = ptls_load_certificates(&tlsctx, certificate_file)) != 0) {
       //fprintf(stderr, "failed to load certificates from file[%d]: %s\n", ret, ERR_error_string(ret, NULL));
-      return QUICLY_ERROR_FAILED;
+      return QUICLY_ERROR_CERT_LOAD_FAILED;
   }
 
   if( key_file == NULL || strlen(key_file) == 0 ) {
@@ -99,14 +99,14 @@ int QuiclyInitializeEngine( const char* alpn, const char* certificate_file,
   // load private key and associate it to the certificate
   FILE *fp;
   if ((fp = fopen(key_file, "r")) == NULL) {
-      //fprintf(stderr, "failed to open file:%s:%s\n", key_file, strerror(errno));
-      exit(1);
+      fprintf(stderr, "failed to open file:%s:%s\n", key_file, strerror(errno));
+      return QUICLY_ERROR_CERT_LOAD_FAILED;
   }
   EVP_PKEY *pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
   fclose(fp);
   if (pkey == NULL) {
-      //fprintf(stderr, "failed to load private key from file:%s\n", key_file);
-      exit(1);
+      fprintf(stderr, "failed to load private key from file:%s\n", key_file);
+      return QUICLY_ERROR_CERT_LOAD_FAILED;
   }
 
   ptls_openssl_sign_certificate_t* sign_certificate = (ptls_openssl_sign_certificate_t*)malloc( sizeof(ptls_openssl_sign_certificate_t) );
@@ -116,7 +116,7 @@ int QuiclyInitializeEngine( const char* alpn, const char* certificate_file,
 
   // check consistency
   if ((tlsctx.certificates.count != 0) != (tlsctx.sign_certificate != NULL)) {
-    return QUICLY_ERROR_FAILED;
+    return QUICLY_ERROR_CERT_LOAD_FAILED;
   }
 
   return QUICLY_OK;
