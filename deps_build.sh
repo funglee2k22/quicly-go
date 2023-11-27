@@ -48,7 +48,7 @@ function build_openssl() {
   cmake ../deps/openssl -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DCMAKE_BUILD_TYPE=$BUILD
   assert_errorcode
 
-  cmake --build . --target clean
+  cmake --build .
   assert_errorcode
 
   cmake --build . --target install
@@ -59,20 +59,14 @@ function build_openssl() {
 function build_quicly() {
   echo [Build Quicly]
   pushd gen_quicly
-  cmake ../deps/quicly -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DOPENSSL_ROOT_DIR=$BASEDIR/internal/deps/include \
+  cmake ../deps/quicly -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DOPENSSL_ROOT_DIR=$BASEDIR/deps/quicly/include \
                                            -DCMAKE_BUILD_TYPE=$BUILD -DWITH_EXAMPLE=OFF
   assert_errorcode
 
-  cmake --build . --target clean
+  cmake --build .
   assert_errorcode
 
   cmake --build . --target install
-  assert_errorcode
-  popd
-
-  echo [Build Quicly-Go with tester]
-  pushd tester/
-  go build -v -o tester.exe
   assert_errorcode
   popd
 }

@@ -60,7 +60,7 @@ pushd gen_openssl
 cmake ../deps/openssl -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/deps -DCMAKE_BUILD_TYPE=%BUILD%
 if %ERRORLEVEL% NEQ 0 goto fail
 
-cmake --build . --target clean
+cmake --build .
 if %ERRORLEVEL% NEQ 0 goto fail
 
 cmake --build . --target install
@@ -71,20 +71,15 @@ popd
 echo [Build Quicly]
 pushd gen_quicly
 cmake ../deps/quicly -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/deps -DOPENSSL_ROOT_DIR=%BASEDIR%/internal/deps/include ^
-                                         -DCMAKE_BUILD_TYPE=%BUILD% -DWITH_EXAMPLE=OFF
+                                         -DCMAKE_BUILD_TYPE=%BUILD% -DWITH_EXAMPLE=OFF -DCMAKE_VERBOSE_MAKEFILE=ON
 if %ERRORLEVEL% NEQ 0 goto fail
 
-cmake --build . --target clean
+cmake --build .
 if %ERRORLEVEL% NEQ 0 goto fail
 
 cmake --build . --target install
 if %ERRORLEVEL% NEQ 0 goto fail
 popd
-
-echo [Build Quicly-Go with tester]
-cd tester/
-go build -v -o tester.exe
-if %ERRORLEVEL% NEQ 0 goto fail
 
 :ok
 echo.
