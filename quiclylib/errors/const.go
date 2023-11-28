@@ -29,4 +29,19 @@ const (
 	QUICLY_ERROR_NOT_OPEN = 7
 	// QUICLY_ERROR_STREAM_NOT_FOUND as declared in include/quicly_wrapper.h:19
 	QUICLY_ERROR_STREAM_NOT_FOUND = 8
+	// QUICLY_ERROR_UNKNOWN_CC_ALGO as declared in include/quicly_wrapper.h:20
+	QUICLY_ERROR_UNKNOWN_CC_ALGO = 9
+)
+
+const (
+	// QUICLY_CC_RENO as declared in include/quicly_wrapper.h:24
+	QUICLY_CC_RENO = iota
+	// QUICLY_CC_CUBIC as declared in include/quicly_wrapper.h:25
+	QUICLY_CC_CUBIC = 1
+	// QUICLY_CC_PICO as declared in include/quicly_wrapper.h:26
+	QUICLY_CC_PICO = 2
+	// QUICLY_CC_SEARCH as declared in include/quicly_wrapper.h:27
+	QUICLY_CC_SEARCH = 3
+	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:28
+	QUICLY_CC_LAST = 4
 )

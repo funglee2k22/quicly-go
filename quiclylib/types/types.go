@@ -13,6 +13,10 @@ type Callbacks struct {
 	OnStreamCloseCallback func(stream Stream, error int)
 }
 
+type Options interface {
+	Get() (string, string, string, string, uint64)
+}
+
 type Session interface {
 	ID() uint64
 

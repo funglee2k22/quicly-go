@@ -77,6 +77,7 @@ func main() {
 	var certFile = flag.String("cert", "server_cert.pem", "PEM certificate to use")
 	var certKey = flag.String("key", "", "PEM key for the certificate")
 	var randServerPayload = flag.Int("payload", 4096, "Random payload to download on server connection")
+	var ccaFlag = flag.String("cca", "reno", "Congestion algorithm to use (reno|cubic|pico|search)")
 
 	flag.Parse()
 
@@ -86,6 +87,7 @@ func main() {
 		CertificateKey:      *certKey,
 		ApplicationProtocol: "qpep_quicly",
 		IdleTimeoutMs:       3000,
+		CongestionAlgorithm: *ccaFlag,
 	}
 
 	logger.Info().Msgf("Options: %v", options)

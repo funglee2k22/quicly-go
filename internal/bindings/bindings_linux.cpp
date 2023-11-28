@@ -39,6 +39,7 @@ static quicly_cid_plaintext_t next_cid;
 static uint64_t quicly_idle_timeout_ms = 5 * 1000;
 static char quicly_alpn[MAX_CONNECTIONS] = "";
 static quicly_conn_t *conns_table[MAX_CONNECTIONS] = {};
+static uint64_t requested_cc_algo = QUICLY_CC_RENO;
 
 static quicly_stream_open_t stream_open = { on_stream_open };
 static ptls_on_client_hello_t on_client_hello = {on_client_hello_cb};
@@ -53,11 +54,18 @@ static ptls_context_t tlsctx = {
 
 // ----- Startup ----- //
 
-int QuiclyInitializeEngine( const char* alpn, const char* certificate_file,
-    const char* key_file, const uint64_t idle_timeout_ms )
+int QuiclyInitializeEngine( const char* alpn, const char* certificate_file, const char* key_file,
+      const uint64_t idle_timeout_ms, uint64_t cc_algo )
 {
   // update idle timeout
   quicly_idle_timeout_ms = idle_timeout_ms;
+
+  // register the requested CC algorithm
+  requested_cc_algo = cc_algo;
+  if( cc_algo < 0 || cc_algo >= QUICLY_CC_LAST ) {
+    fprintf(stderr, "requested congestion control [%d] is not available\n", cc_algo);
+    return QUICLY_ERROR_UNKNOWN_CC_ALGO;
+  }
 
   // copy requested alpn
   memset( quicly_alpn, '\0', sizeof(char) * MAX_CONNECTIONS );
@@ -73,7 +81,7 @@ int QuiclyInitializeEngine( const char* alpn, const char* certificate_file,
   // load certificate
   int ret;
   if ((ret = ptls_load_certificates(&tlsctx, certificate_file)) != 0) {
-      //fprintf(stderr, "failed to load certificates from file[%d]: %s\n", ret, ERR_error_string(ret, NULL));
+      fprintf(stderr, "failed to load certificates from file[%d]: %s\n", ret, ERR_error_string(ret, NULL));
       return QUICLY_ERROR_CERT_LOAD_FAILED;
   }
 

@@ -58,7 +58,11 @@ const (
 	QUICLY_ERROR_NOT_OPEN = 7
 	// QUICLY_ERROR_STREAM_NOT_FOUND as declared in include/quicly_wrapper.h:19
 	QUICLY_ERROR_STREAM_NOT_FOUND = 8
+	// QUICLY_ERROR_UNKNOWN_CC_ALGO as declared in include/quicly_wrapper.h:20
+	QUICLY_ERROR_UNKNOWN_CC_ALGO = 9
 )
+
+const ()
 
 const ()
 

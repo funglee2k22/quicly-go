@@ -2,9 +2,11 @@ package quiclylib
 
 import (
 	"github.com/Project-Faster/quicly-go/internal/bindings"
+	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var _ types.ServerSession = &QServerSession{}
@@ -16,8 +18,10 @@ const (
 	SMALL_BUFFER_SIZE = 4 * 1024
 )
 
-func QuiclyInitializeEngine(alpn, certfile, certkey string, idle_timeout uint64) int {
+func QuiclyInitializeEngine(options types.Options) int {
 	bindings.ResetRegistry()
+
+	proto, cc_req, certfile, certkey, idle_timeout := options.Get()
 
 	cwd, _ := os.Getwd()
 	if !filepath.IsAbs(certfile) {
@@ -27,7 +31,26 @@ func QuiclyInitializeEngine(alpn, certfile, certkey string, idle_timeout uint64)
 		certkey = filepath.Join(cwd, certkey)
 	}
 
-	result := bindings.QuiclyInitializeEngine(alpn, certfile, certkey, idle_timeout)
+	cc_algo := errors.QUICLY_CC_RENO
+	switch strings.ToLower(cc_req) {
+	case "cubic":
+		cc_algo = errors.QUICLY_CC_CUBIC
+		break
+	case "pico":
+		cc_algo = errors.QUICLY_CC_PICO
+		break
+	case "search":
+		cc_algo = errors.QUICLY_CC_SEARCH
+		break
+
+	case "reno":
+		fallthrough
+	default:
+		cc_algo = errors.QUICLY_CC_RENO
+		break
+	}
+
+	result := bindings.QuiclyInitializeEngine(proto, certfile, certkey, idle_timeout, uint64(cc_algo))
 	return int(result)
 }
 
