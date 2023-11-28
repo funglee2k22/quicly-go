@@ -135,6 +135,32 @@ int QuiclyCloseEngine() {
   return QUICLY_OK;
 }
 
+static int apply_requested_cc_algo(quicly_conn_t *conn)
+{
+  int ret = QUICLY_OK;
+  if( conn == NULL )
+    return QUICLY_ERROR_FAILED;
+
+  switch( requested_cc_algo ) {
+    case QUICLY_CC_RENO:
+      ret = quicly_set_cc(conn, &quicly_cc_type_reno);
+      break;
+    case QUICLY_CC_CUBIC:
+      ret = quicly_set_cc(conn, &quicly_cc_type_cubic);
+      break;
+    case QUICLY_CC_PICO:
+      ret = quicly_set_cc(conn, &quicly_cc_type_pico);
+      break;
+    case QUICLY_CC_SEARCH:
+      ret = quicly_set_cc(conn, &quicly_cc_type_search);
+      break;
+    default:
+      ret = QUICLY_ERROR_UNKNOWN_CC_ALGO;
+  }
+
+  return ret;
+}
+
 // ----- Callbacks ----- //
 
 static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_on_client_hello_parameters_t *params)
@@ -282,8 +308,14 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
                               &client_hs_prop,
                               NULL, NULL)) != 0)
     {
-        //fprintf(stderr, "quicly_connect failed:%d\n", ret);
-        return QUICLY_ERROR_FAILED;
+        fprintf(stderr, "quicly_connect failed:%d\n", ret);
+        return ret;
+    }
+
+    if( (ret = apply_requested_cc_algo(conns_table[i]) ) != 0 )
+    {
+        fprintf(stderr, "quicly_connect failed:%d\n", ret);
+        return ret;
     }
 
     return QUICLY_OK;
