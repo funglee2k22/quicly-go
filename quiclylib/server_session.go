@@ -94,7 +94,8 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 	}
 	return targetHandler
 }
-func (s *QServerSession) connDelete(id uint64) {
+
+func (s *QServerSession) connectionDelete(id uint64) {
 	bindings.RemoveConnection(id)
 
 	s.enterCritical()
@@ -174,6 +175,66 @@ func (s *QServerSession) connectionInHandler() {
 	}
 }
 
+// --- Session interface --- //
+
+func (s *QServerSession) StreamPacket(packet *types.Packet) {
+	panic(errors.QUICLY_ERROR_FAILED)
+}
+
+func (s *QServerSession) ID() uint64 {
+	return s.id
+}
+
+func (s *QServerSession) OpenStream() types.Stream {
+	return nil
+}
+
+func (s *QServerSession) getStreamInternal(id uint64) (types.Stream, *QServerConnection) {
+	s.enterCritical()
+	defer s.exitCritical()
+
+	for _, handler := range s.connections {
+		if st := handler.GetStream(id); st != nil {
+			return st, handler
+		}
+	}
+
+	return nil, nil
+}
+
+func (s *QServerSession) GetStream(id uint64) types.Stream {
+	st, _ := s.getStreamInternal(id)
+	return st
+}
+
+func (s *QServerSession) OnStreamOpen(streamId uint64) {
+	st, handler := s.getStreamInternal(streamId)
+	if st == nil {
+		panic(errors.QUICLY_ERROR_FAILED)
+	}
+
+	if s.OnConnectionOpen != nil && len(handler.streams) == 1 {
+		s.OnConnectionOpen(handler)
+	}
+
+	if s.OnStreamOpenCallback != nil {
+		s.OnStreamOpenCallback(st)
+	}
+}
+
+func (s *QServerSession) OnStreamClose(streamId uint64, error int) {
+	st, _ := s.getStreamInternal(streamId)
+	if st == nil {
+		panic(errors.QUICLY_ERROR_FAILED)
+	}
+
+	if s.OnStreamCloseCallback != nil {
+		s.OnStreamCloseCallback(st, error)
+	}
+}
+
+// --- Listener interface --- //
+
 func (s *QServerSession) Accept() (types.ServerConnection, error) {
 	s.init()
 	defer s.Logger.Info().Msgf("ServerSession terminated")
@@ -191,14 +252,6 @@ func (s *QServerSession) Accept() (types.ServerConnection, error) {
 		default:
 		}
 	}
-}
-
-func (s *QServerSession) StreamPacket(packet *types.Packet) {
-	panic(errors.QUICLY_ERROR_FAILED)
-}
-
-func (s *QServerSession) ID() uint64 {
-	return s.id
 }
 
 func (s *QServerSession) Close() error {
@@ -227,52 +280,4 @@ func (s *QServerSession) Addr() net.Addr {
 		return nil
 	}
 	return s.NetConn.LocalAddr()
-}
-
-func (s *QServerSession) OpenStream() types.Stream {
-	return nil
-}
-
-func (s *QServerSession) GetStream(id uint64) types.Stream {
-	st, _ := s.getStreamInternal(id)
-	return st
-}
-
-func (s *QServerSession) getStreamInternal(id uint64) (types.Stream, *QServerConnection) {
-	s.enterCritical()
-	defer s.exitCritical()
-
-	for _, handler := range s.connections {
-		if st := handler.GetStream(id); st != nil {
-			return st, handler
-		}
-	}
-
-	return nil, nil
-}
-
-func (s *QServerSession) OnStreamOpen(streamId uint64) {
-	st, handler := s.getStreamInternal(streamId)
-	if st == nil {
-		panic(errors.QUICLY_ERROR_FAILED)
-	}
-
-	if s.OnConnectionOpen != nil && len(handler.streams) == 1 {
-		s.OnConnectionOpen(handler)
-	}
-
-	if s.OnStreamOpenCallback != nil {
-		s.OnStreamOpenCallback(st)
-	}
-}
-
-func (s *QServerSession) OnStreamClose(streamId uint64, error int) {
-	st, _ := s.getStreamInternal(streamId)
-	if st == nil {
-		panic(errors.QUICLY_ERROR_FAILED)
-	}
-
-	if s.OnStreamCloseCallback != nil {
-		s.OnStreamCloseCallback(st, error)
-	}
 }

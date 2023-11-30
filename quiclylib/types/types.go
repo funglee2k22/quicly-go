@@ -38,6 +38,8 @@ type Session interface {
 type ServerSession interface {
 	// Accept waits for and returns the next connection to the listener.
 	Accept() (ServerConnection, error)
+
+	Session
 }
 
 type ServerConnection interface {

@@ -37,12 +37,8 @@ type QClientSession struct {
 	incomingQueue chan *types.Packet
 }
 
-func (s *QClientSession) StreamPacket(packet *types.Packet) {
-	if packet == nil {
-		return
-	}
-	s.outgoingQueue <- packet
-}
+var _ net.Listener = &QClientSession{}
+var _ types.Session = &QClientSession{}
 
 func (s *QClientSession) init() {
 	if s.incomingQueue == nil {
@@ -51,21 +47,42 @@ func (s *QClientSession) init() {
 		s.incomingQueue = make(chan *types.Packet, 1024)
 		s.outgoingQueue = make(chan *types.Packet, 1024)
 		s.streams = make(map[uint64]types.Stream)
-
-		go s.channelsWatcher()
 	}
 }
 
-func (s *QClientSession) channelsWatcher() {
-	for {
-		select {
-		case <-s.Ctx.Done():
-			return
-		case <-time.After(250 * time.Millisecond):
-			break
-		}
-		s.Logger.Debug().Msgf("[conn:%v] in:%d out:%d str:%d", s.id, len(s.incomingQueue), len(s.outgoingQueue), len(s.streams))
+func (s *QClientSession) connect() int {
+	if s.connected {
+		return errors.QUICLY_OK
 	}
+
+	s.init()
+
+	var ptr_id bindings.Size_t = 0
+
+	udpAddr := s.Addr().(*net.UDPAddr)
+
+	if ret := bindings.QuiclyConnect(udpAddr.IP.String(), int32(udpAddr.Port), &ptr_id); ret != errors.QUICLY_OK {
+		return int(ret)
+	}
+
+	s.id = uint64(ptr_id)
+	bindings.RegisterConnection(s, s.id)
+
+	s.connected = true
+
+	for i := 0; i < runtime.NumCPU(); i++ {
+		s.handlersWaiter.Add(2)
+		go s.connectionInHandler()
+		go s.connectionWriteHandler()
+	}
+	s.handlersWaiter.Add(1)
+	go s.connectionProcessHandler()
+
+	if s.OnConnectionOpen != nil {
+		s.OnConnectionOpen(s)
+	}
+
+	return errors.QUICLY_OK
 }
 
 func (s *QClientSession) connectionInHandler() {
@@ -227,72 +244,10 @@ func (s *QClientSession) flushOutgoingQueue() {
 	}
 }
 
+// --- Session interface --- //
+
 func (s *QClientSession) ID() uint64 {
 	return s.id
-}
-
-func (s *QClientSession) Accept() (net.Conn, error) {
-	return nil, net.ErrClosed
-}
-
-func (s *QClientSession) Close() error {
-	if !s.connected || s == nil || s.Conn == nil {
-		return nil
-	}
-	s.Logger.Info().Msgf("== Connection %v WaitEnd ==\"", s.id)
-	defer s.Logger.Info().Msgf("== Connection %v End ==\"", s.id)
-
-	s.ctxCancel()
-	close(s.incomingQueue)
-	close(s.outgoingQueue)
-	_ = s.Conn.Close()
-
-	if s.OnConnectionClose != nil {
-		s.Logger.Debug().Msgf("Close connection: %d\n", s.id)
-		s.OnConnectionClose(s)
-	}
-	s.handlersWaiter.Wait()
-	bindings.RemoveConnection(s.id)
-	return nil
-}
-
-func (s *QClientSession) Addr() net.Addr {
-	return s.Conn.RemoteAddr()
-}
-
-func (s *QClientSession) connect() int {
-	if s.connected {
-		return errors.QUICLY_OK
-	}
-
-	s.init()
-
-	var ptr_id bindings.Size_t = 0
-
-	udpAddr := s.Addr().(*net.UDPAddr)
-
-	if ret := bindings.QuiclyConnect(udpAddr.IP.String(), int32(udpAddr.Port), &ptr_id); ret != errors.QUICLY_OK {
-		return int(ret)
-	}
-
-	s.id = uint64(ptr_id)
-	bindings.RegisterConnection(s, s.id)
-
-	s.connected = true
-
-	for i := 0; i < runtime.NumCPU(); i++ {
-		s.handlersWaiter.Add(2)
-		go s.connectionInHandler()
-		go s.connectionWriteHandler()
-	}
-	s.handlersWaiter.Add(1)
-	go s.connectionProcessHandler()
-
-	if s.OnConnectionOpen != nil {
-		s.OnConnectionOpen(s)
-	}
-
-	return errors.QUICLY_OK
 }
 
 func (s *QClientSession) OpenStream() types.Stream {
@@ -329,6 +284,13 @@ func (s *QClientSession) GetStream(id uint64) types.Stream {
 	return s.streams[id]
 }
 
+func (s *QClientSession) StreamPacket(packet *types.Packet) {
+	if packet == nil {
+		return
+	}
+	s.outgoingQueue <- packet
+}
+
 func (s *QClientSession) OnStreamOpen(streamId uint64) {
 	if s.OnStreamOpenCallback == nil {
 		return
@@ -361,6 +323,33 @@ func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
 	}
 }
 
-var _ net.Listener = &QClientSession{}
+// --- Listener interface --- //
 
-var _ types.Session = &QClientSession{}
+func (s *QClientSession) Accept() (net.Conn, error) {
+	return nil, net.ErrClosed
+}
+
+func (s *QClientSession) Close() error {
+	if !s.connected || s == nil || s.Conn == nil {
+		return nil
+	}
+	s.Logger.Info().Msgf("== Connection %v WaitEnd ==\"", s.id)
+	defer s.Logger.Info().Msgf("== Connection %v End ==\"", s.id)
+
+	s.ctxCancel()
+	close(s.incomingQueue)
+	close(s.outgoingQueue)
+	_ = s.Conn.Close()
+
+	if s.OnConnectionClose != nil {
+		s.Logger.Debug().Msgf("Close connection: %d\n", s.id)
+		s.OnConnectionClose(s)
+	}
+	s.handlersWaiter.Wait()
+	bindings.RemoveConnection(s.id)
+	return nil
+}
+
+func (s *QClientSession) Addr() net.Addr {
+	return s.Conn.RemoteAddr()
+}

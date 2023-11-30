@@ -90,8 +90,8 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	r.routinesWaiter.Add(2)
 	r.started = true
 
-	go r.connProcess()
-	go r.connOutgoing()
+	go r.connectionProcess()
+	go r.connectionOutgoing()
 }
 
 func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
@@ -104,68 +104,7 @@ func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
 	r.incomingQueue <- pkt
 }
 
-func (r *QServerConnection) StreamPacket(packet *types.Packet) {
-	if !r.started || packet == nil {
-		return
-	}
-	r.outgoingQueue <- packet
-}
-
-func (r *QServerConnection) ID() uint64 {
-	return r.id
-}
-
-func (r *QServerConnection) OpenStream() types.Stream {
-	return nil
-}
-
-func (r *QServerConnection) OnStreamOpen(streamId uint64) {
-	if len(r.streams) == 0 {
-		r.session.enqueueConnAccept(r)
-		r.session.OnConnectionOpen(r)
-	}
-
-	st := &QStream{
-		session: r,
-		conn:    r.NetConn,
-		id:      streamId,
-		Logger:  r.Logger,
-	}
-	r.enterCritical(false)
-	r.streams[streamId] = st
-	r.exitCritical(false)
-
-	r.streamAcceptQueue <- st
-
-	r.session.OnStreamOpen(streamId)
-
-	st.OnOpened()
-}
-
-func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
-	st := r.GetStream(streamId)
-	if st == nil {
-		return
-	}
-
-	_ = st.OnClosed()
-
-	r.enterCritical(false)
-	delete(r.streams, streamId)
-	r.exitCritical(false)
-
-	if r.session.OnStreamCloseCallback != nil {
-		r.session.OnStreamCloseCallback(st, code)
-	}
-}
-
-func (r *QServerConnection) GetStream(id uint64) types.Stream {
-	r.enterCritical(false)
-	defer r.exitCritical(false)
-	return r.streams[id]
-}
-
-func (r *QServerConnection) connProcess() {
+func (r *QServerConnection) connectionProcess() {
 	defer func() {
 		r.routinesWaiter.Done()
 		if err := recover(); err != nil {
@@ -223,7 +162,7 @@ func (r *QServerConnection) connProcess() {
 	}
 }
 
-func (r *QServerConnection) connOutgoing() {
+func (r *QServerConnection) connectionOutgoing() {
 	defer func() {
 		r.routinesWaiter.Done()
 		if err := recover(); err != nil {
@@ -311,6 +250,69 @@ func (r *QServerConnection) flushOutgoingQueue() {
 	}
 }
 
+// --- Session interface --- //
+
+func (r *QServerConnection) StreamPacket(packet *types.Packet) {
+	if !r.started || packet == nil {
+		return
+	}
+	r.outgoingQueue <- packet
+}
+
+func (r *QServerConnection) ID() uint64 {
+	return r.id
+}
+
+func (r *QServerConnection) OpenStream() types.Stream {
+	return nil
+}
+
+func (r *QServerConnection) OnStreamOpen(streamId uint64) {
+	if len(r.streams) == 0 {
+		r.session.enqueueConnAccept(r)
+		r.session.OnConnectionOpen(r)
+	}
+
+	st := &QStream{
+		session: r,
+		conn:    r.NetConn,
+		id:      streamId,
+		Logger:  r.Logger,
+	}
+	r.enterCritical(false)
+	r.streams[streamId] = st
+	r.exitCritical(false)
+
+	r.streamAcceptQueue <- st
+
+	r.session.OnStreamOpen(streamId)
+
+	st.OnOpened()
+}
+
+func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
+	st := r.GetStream(streamId)
+	if st == nil {
+		return
+	}
+
+	_ = st.OnClosed()
+
+	r.enterCritical(false)
+	delete(r.streams, streamId)
+	r.exitCritical(false)
+
+	if r.session.OnStreamCloseCallback != nil {
+		r.session.OnStreamCloseCallback(st, code)
+	}
+}
+
+func (r *QServerConnection) GetStream(id uint64) types.Stream {
+	r.enterCritical(false)
+	defer r.exitCritical(false)
+	return r.streams[id]
+}
+
 // --- Listener interface --- //
 
 func (r *QServerConnection) Accept() (types.Stream, error) {
@@ -348,7 +350,7 @@ func (r *QServerConnection) Close() error {
 	close(r.streamAcceptQueue)
 	r.started = false
 
-	r.session.connDelete(r.id)
+	r.session.connectionDelete(r.id)
 	r.Logger.Info().Msgf("Closed stream %d", r.id)
 
 	return nil
