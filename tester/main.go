@@ -83,6 +83,7 @@ func main() {
 
 	options := quicly.Options{
 		Logger:              &logger,
+		IsClient:            *clientFlag,
 		CertificateFile:     *certFile,
 		CertificateKey:      *certKey,
 		ApplicationProtocol: "qpep_quicly",

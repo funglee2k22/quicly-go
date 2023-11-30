@@ -8,6 +8,7 @@ import (
 type Options struct {
 	Logger *log.Logger
 
+	IsClient            bool
 	ApplicationProtocol string
 	CongestionAlgorithm string
 	CertificateFile     string
@@ -16,10 +17,11 @@ type Options struct {
 }
 
 func (o Options) String() string {
-	return fmt.Sprintf("{CertFile:%s,CertKey:%s}", o.CertificateFile, o.CertificateKey)
+	return fmt.Sprintf("{%v,%v,%v,%v,%v,%v}", o.IsClient, o.ApplicationProtocol, o.CongestionAlgorithm,
+		o.CertificateFile, o.CertificateKey, o.IdleTimeoutMs)
 }
 
-func (o Options) Get() (string, string, string, string, uint64) {
-	return o.ApplicationProtocol, o.CongestionAlgorithm,
+func (o Options) Get() (bool, string, string, string, string, uint64) {
+	return o.IsClient, o.ApplicationProtocol, o.CongestionAlgorithm,
 		o.CertificateFile, o.CertificateKey, o.IdleTimeoutMs
 }

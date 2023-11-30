@@ -21,7 +21,7 @@ const (
 func QuiclyInitializeEngine(options types.Options) int {
 	bindings.ResetRegistry()
 
-	proto, cc_req, certfile, certkey, idle_timeout := options.Get()
+	is_client, proto, cc_req, certfile, certkey, idle_timeout := options.Get()
 
 	cwd, _ := os.Getwd()
 	if !filepath.IsAbs(certfile) {
@@ -50,7 +50,12 @@ func QuiclyInitializeEngine(options types.Options) int {
 		break
 	}
 
-	result := bindings.QuiclyInitializeEngine(proto, certfile, certkey, idle_timeout, uint64(cc_algo))
+	is_client_int := uint64(0)
+	if is_client {
+		is_client_int = uint64(1)
+	}
+
+	result := bindings.QuiclyInitializeEngine(is_client_int, proto, certfile, certkey, idle_timeout, uint64(cc_algo))
 	return int(result)
 }
 

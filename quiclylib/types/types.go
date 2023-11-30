@@ -14,7 +14,7 @@ type Callbacks struct {
 }
 
 type Options interface {
-	Get() (string, string, string, string, uint64)
+	Get() (bool, string, string, string, string, uint64)
 }
 
 type Session interface {

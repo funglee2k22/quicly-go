@@ -54,7 +54,7 @@ static ptls_context_t tlsctx = {
 
 // ----- Startup ----- //
 
-int QuiclyInitializeEngine( const char* alpn, const char* certificate_file, const char* key_file,
+int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* certificate_file, const char* key_file,
       const uint64_t idle_timeout_ms, uint64_t cc_algo )
 {
   // update idle timeout
@@ -85,7 +85,9 @@ int QuiclyInitializeEngine( const char* alpn, const char* certificate_file, cons
       return QUICLY_ERROR_CERT_LOAD_FAILED;
   }
 
-  if( key_file == NULL || strlen(key_file) == 0 ) {
+  // client works without key so if not found not a problem
+  // on server its necessary
+  if( is_client == 1 || key_file == NULL || strlen(key_file) == 0 ) {
     return QUICLY_OK;
   }
 
