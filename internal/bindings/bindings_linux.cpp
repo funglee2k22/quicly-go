@@ -129,16 +129,16 @@ static int apply_requested_cc_algo(quicly_conn_t *conn)
 
   switch( requested_cc_algo ) {
     case QUICLY_CC_RENO:
-      ret = quicly_set_cc(conn, &quicly_cc_type_reno);
+      quicly_set_cc(conn, &quicly_cc_type_reno);
       break;
     case QUICLY_CC_CUBIC:
-      ret = quicly_set_cc(conn, &quicly_cc_type_cubic);
+      quicly_set_cc(conn, &quicly_cc_type_cubic);
       break;
     case QUICLY_CC_PICO:
-      ret = quicly_set_cc(conn, &quicly_cc_type_pico);
+      quicly_set_cc(conn, &quicly_cc_type_pico);
       break;
     case QUICLY_CC_SEARCH:
-      ret = quicly_set_cc(conn, &quicly_cc_type_search);
+      quicly_set_cc(conn, &quicly_cc_type_search);
       break;
     default:
       ret = QUICLY_ERROR_UNKNOWN_CC_ALGO;
@@ -300,7 +300,7 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
 
     if( (ret = apply_requested_cc_algo(conns_table[i]) ) != 0 )
     {
-        fprintf(stderr, "quicly_connect failed:%d\n", ret);
+        fprintf(stderr, "apply_requested_cc_algo failed:%d\n", ret);
         return ret;
     }
 
@@ -339,7 +339,7 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
         decoded = NULL;
         decoded = (quicly_decoded_packet_t*)malloc( sizeof(quicly_decoded_packet_t) );
 
-        if (quicly_decode_packet(&ctx, decoded, (const uint8_t *)msg, dgram_len-off, &off) == SIZE_MAX) {
+        if (quicly_decode_packet(&ctx, decoded, (const uint8_t *)msg, dgram_len, &off) == SIZE_MAX) {
             err = QUICLY_ERROR_DECODE_FAILED;
             break;
         }
