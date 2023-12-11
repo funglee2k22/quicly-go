@@ -63,7 +63,7 @@ int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* ce
   // register the requested CC algorithm
   requested_cc_algo = cc_algo;
   if( cc_algo < 0 || cc_algo >= QUICLY_CC_LAST ) {
-    fprintf(stderr, "requested congestion control [%d] is not available\n", cc_algo);
+    fprintf(stderr, "requested congestion control [%ld] is not available\n", cc_algo);
     return QUICLY_ERROR_UNKNOWN_CC_ALGO;
   }
 
@@ -265,12 +265,13 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
       return QUICLY_ERROR_FAILED;
 
     // Version used
-    ctx.initial_version = 0xff000000 | 27;
+    ctx.initial_version = 0xff000000 | 29;
 
     // Context transport parameters
-    ctx.transport_params.max_udp_payload_size = 8192;
+    ctx.loss = { (1024/8), 1, 500, 8 };
+    ctx.transport_params.max_udp_payload_size = 1480;
     ctx.transport_params.max_idle_timeout = quicly_idle_timeout_ms;
-    ctx.transport_params.max_ack_delay = 400;
+    ctx.transport_params.max_ack_delay = 800;
     ctx.transport_params.max_streams_bidi = MAX_CONNECTIONS;
 
     // Application protocol extension
@@ -448,6 +449,8 @@ int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
 
     quicly_streambuf_egress_shutdown(stream);
 
+	// TODO: fix crash on close
+    //quicly_streambuf_destroy(stream, error);
     return QUICLY_OK;
 }
 

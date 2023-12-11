@@ -104,8 +104,8 @@ func (s *QClientSession) connectionInHandler() {
 			break
 		}
 
-		s.Logger.Debug().Msgf("[%v] UDP packet", s.id)
 		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
+		s.Logger.Debug().Msgf("[%v] UDP packet %d %v", s.id, n, addr)
 		if n == 0 || (n == 0 && err != nil) {
 			s.Logger.Debug().Msgf("QUICLY No packet")
 			continue
@@ -143,6 +143,7 @@ func (s *QClientSession) connectionProcessHandler() {
 	for {
 		select {
 		case pkt := <-s.incomingQueue:
+			s.Logger.Debug().Msgf("[%v] PROC packet %v %d", s.id, pkt.DataLen, pkt.Streamid)
 			if pkt == nil {
 				break
 			}
@@ -182,32 +183,38 @@ func (s *QClientSession) connectionWriteHandler() {
 		s.handlersWaiter.Done()
 	}()
 
+	nextDump := time.Now().Add(100 * time.Millisecond)
+
+	sleepCounter := 0
 	for {
-		select {
-		case pkt := <-s.outgoingQueue:
-			if pkt == nil {
-				continue
-			}
-			//s.Logger.Info().Msgf("STREAM WRITE %d: %d - %v", pkt.Streamid, pkt.DataLen, pkt.data[:pkt.DataLen])
+		if sleepCounter > 100 {
+			<-time.After(100 * time.Microsecond)
+			sleepCounter = 0
+		}
+		sleepCounter++
 
+		if time.Until(nextDump).Milliseconds() < int64(1) {
 			s.streamsLock.RLock()
-			var stream, _ = s.streams[pkt.Streamid].(*QStream)
-			s.streamsLock.RUnlock()
+			for id, sr := range s.streams {
+				stream := sr.(*QStream)
 
-			stream.outBufferLock.Lock()
-			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-			s.Logger.Debug().Msgf("STREAM WRITE %d: %d", pkt.Streamid, len(data))
+				stream.outBufferLock.Lock()
+				data := append([]byte{}, stream.streamOutBuf.Bytes()...)
+				s.Logger.Debug().Msgf("STREAM WRITE %d: %d", id, len(data))
+				stream.streamOutBuf.Reset()
+				stream.outBufferLock.Unlock()
 
-			stream.streamOutBuf.Reset()
-			stream.outBufferLock.Unlock()
-
-			errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(pkt.Streamid), data, bindings.Size_t(len(data)))
-			if errcode != errors.QUICLY_OK {
-				s.Logger.Error().Msgf("%v quicly errorcode: %d", s.id, errcode)
-				continue
+				errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.id), bindings.Size_t(id), data, bindings.Size_t(len(data)))
+				if errcode != errors.QUICLY_OK {
+					s.Logger.Error().Msgf("%v quicly errorcode: %d", s.id, errcode)
+					continue
+				}
 			}
-			continue
+			s.streamsLock.RUnlock()
+			nextDump = nextDump.Add(100 * time.Millisecond)
+		}
 
+		select {
 		case <-s.Ctx.Done():
 			return
 		case <-time.After(100 * time.Millisecond):
@@ -270,6 +277,7 @@ func (s *QClientSession) OpenStream() types.Stream {
 		id:      streamId,
 		Logger:  s.Logger,
 	}
+	st.init()
 
 	s.streamsLock.Lock()
 	defer s.streamsLock.Unlock()
@@ -306,7 +314,7 @@ func (s *QClientSession) OnStreamOpen(streamId uint64) {
 }
 
 func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
-	s.Logger.Info().Msgf("On close stream: %d\n", streamId)
+	s.Logger.Debug().Msgf("On close stream: %d\n", streamId)
 
 	if s.OnStreamCloseCallback == nil {
 		return

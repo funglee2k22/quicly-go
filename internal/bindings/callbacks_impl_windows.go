@@ -78,7 +78,7 @@ func goQuiclyOnStreamClose(conn_id C.uint64_t, stream_id C.uint64_t, error C.int
 
 //export goQuiclyOnStreamReceived
 func goQuiclyOnStreamReceived(conn_id C.uint64_t, stream_id C.uint64_t, data *C.struct_iovec) {
-	fmt.Printf("received stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+	//fmt.Printf("received stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 	callbackLock.RLock()
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 	callbackLock.RUnlock()

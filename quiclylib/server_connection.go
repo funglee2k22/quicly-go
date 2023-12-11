@@ -174,6 +174,7 @@ func (r *QServerConnection) connectionOutgoing() {
 	}()
 
 	sleepCounter := 0
+	nextDump := time.Now().Add(100 * time.Millisecond)
 
 	for {
 		if sleepCounter > 100 {
@@ -182,32 +183,56 @@ func (r *QServerConnection) connectionOutgoing() {
 		}
 		sleepCounter++
 
+		if time.Until(nextDump).Milliseconds() < int64(1) {
+			r.enterCritical(false)
+			for id, sr := range r.streams {
+				stream := sr.(*QStream)
+
+				stream.outBufferLock.Lock()
+				data := append([]byte{}, stream.streamOutBuf.Bytes()...)
+				stream.streamOutBuf.Reset()
+				stream.outBufferLock.Unlock()
+
+				errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.session.ID()), bindings.Size_t(id), data, bindings.Size_t(len(data)))
+				if errcode != errors.QUICLY_OK {
+					r.Logger.Error().Msgf("%v quicly errorcode: %d", r.id, errcode)
+					continue
+				}
+			}
+			nextDump = nextDump.Add(100 * time.Millisecond)
+			r.exitCritical(false)
+		}
+
 		select {
 		case pkt := <-r.outgoingQueue:
 			if pkt == nil {
 				continue
 			}
 
-			r.enterCritical(true)
-			var stream, _ = r.streams[pkt.Streamid].(*QStream)
-			r.exitCritical(true)
-			if stream == nil {
-				r.Logger.Error().Msgf("CONN WRITE ERR: no stream %d", pkt.Streamid)
-				return
-			}
-
-			stream.outBufferLock.Lock()
-			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-			r.Logger.Debug().Msgf("CONN WRITE %d: %d", pkt.Streamid, pkt.DataLen)
-
-			stream.streamOutBuf.Reset()
-			stream.outBufferLock.Unlock()
-
-			errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.session.ID()), bindings.Size_t(pkt.Streamid), data, bindings.Size_t(len(data)))
-			if errcode != errors.QUICLY_OK {
-				r.Logger.Error().Msgf("%v quicly errorcode: %d", r.id, errcode)
-				continue
-			}
+			//r.enterCritical(true)
+			//var stream, _ = r.streams[pkt.Streamid].(*QStream)
+			//r.exitCritical(true)
+			//if stream == nil {
+			//	r.Logger.Error().Msgf("CONN WRITE ERR: no stream %d", pkt.Streamid)
+			//	return
+			//}
+			//
+			//stream.outBufferLock.Lock()
+			//if stream.streamOutBuf.Len() < 4096 {
+			//	stream.outBufferLock.Unlock()
+			//	continue
+			//}
+			//data := append([]byte{}, stream.streamOutBuf.Bytes()...)
+			//r.Logger.Debug().Msgf("CONN WRITE %d: %d", pkt.Streamid, pkt.DataLen)
+			//
+			//stream.streamOutBuf.Reset()
+			//stream.outBufferLock.Unlock()
+			//
+			//errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.session.ID()), bindings.Size_t(pkt.Streamid), data, bindings.Size_t(len(data)))
+			//if errcode != errors.QUICLY_OK {
+			//	r.Logger.Error().Msgf("%v quicly errorcode: %d", r.id, errcode)
+			//	continue
+			//}
 			continue
 
 		case <-r.Ctx.Done():
@@ -283,6 +308,7 @@ func (r *QServerConnection) OnStreamOpen(streamId uint64) {
 	r.streams[streamId] = st
 	r.exitCritical(false)
 
+	st.init()
 	r.streamAcceptQueue <- st
 
 	r.session.OnStreamOpen(streamId)

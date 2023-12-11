@@ -73,6 +73,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	s.init()
 
 	if s.IsClosed() {
+		s.Logger.Info().Msgf("STREAM CLOSED %d", s.id)
 		return 0, io.ErrClosedPipe
 	}
 
@@ -83,29 +84,41 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 		s.readDeadline = zeroTime
 	}()
 
-	select {
-	case <-s.bufferUpdateCh:
-		s.inBufferLock.Lock()
-		wr, _ := s.streamInBuf.Read(b)
-		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
-		s.inBufferLock.Unlock()
-		return wr, nil
+	total := 0
 
-	case <-time.After(time.Until(s.readDeadline)):
-		s.inBufferLock.Lock()
-		wr, _ := s.streamInBuf.Read(b)
-		s.Logger.Debug().Msgf("STREAM READ %d BUFF READ: %d", s.id, wr)
-		s.inBufferLock.Unlock()
-		if wr > 0 {
-			return wr, nil
+	s.inBufferLock.Lock()
+	if s.streamInBuf.Len() > 0 {
+		wr, _ := s.streamInBuf.Read(b[total:])
+		total += wr
+		//s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d / %d", s.id, wr, cap(b))
+		if total == cap(b) {
+			s.inBufferLock.Unlock()
+			return total, nil
 		}
+	}
+	s.inBufferLock.Unlock()
 
-		if s.IsClosed() && s.streamInBuf.Len() == 0 {
-			s.Logger.Debug().Msgf("STREAM READ %d CLOSE", s.id)
-			return 0, io.EOF
+	for {
+		select {
+		case <-s.bufferUpdateCh:
+			s.inBufferLock.Lock()
+			wr, _ := s.streamInBuf.Read(b[total:])
+			s.inBufferLock.Unlock()
+			total += wr
+			//s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d / %d", s.id, wr, cap(b))
+			if total == cap(b) {
+				return total, nil
+			}
+			continue
+
+		case <-time.After(time.Until(s.readDeadline)):
+			s.inBufferLock.Lock()
+			wr, _ := s.streamInBuf.Read(b[total:])
+			s.inBufferLock.Unlock()
+			total += wr
+			//s.Logger.Info().Msgf("STREAM READ %d BUFF READ: %d / %d", s.id, wr, cap(b))
+			return total, nil
 		}
-		s.Logger.Debug().Msgf("STREAM READ %d TIMEOUT", s.id)
-		return 0, nil
 	}
 }
 
@@ -113,7 +126,7 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 	s.init()
 
 	if s.IsClosed() {
-		s.Logger.Debug().Msgf("STREAM OUT %d CLOSE", s.id)
+		s.Logger.Error().Msgf("STREAM OUT %d CLOSE", s.id)
 		return 0, io.ErrClosedPipe
 	}
 
@@ -142,6 +155,7 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 
 func (s *QStream) Close() error {
 	if s.IsClosed() {
+		s.Logger.Error().Msgf("STREAM %d CLOSED", s.id)
 		return nil
 	}
 	s.closed.Store(true)
@@ -164,7 +178,12 @@ var receivedCounter = 0
 func (s *QStream) OnReceived(data []byte, dataLen int) {
 	s.init()
 
-	if s.IsClosed() || dataLen == 0 {
+	if dataLen == 0 {
+		s.Logger.Debug().Msgf("STREAM IN %d EMPTY", s.id)
+		return
+	}
+	if s.IsClosed() {
+		s.Logger.Error().Msgf("STREAM IN %d CLOSE", s.id)
 		return
 	}
 
