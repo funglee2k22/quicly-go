@@ -73,7 +73,11 @@ func goQuiclyOnStreamClose(conn_id C.uint64_t, stream_id C.uint64_t, error C.int
 		return
 	}
 
-	conn.OnStreamClose(uint64(stream_id), int(error))
+	go func() {
+		mtx_bindings.Lock()
+		defer mtx_bindings.Unlock()
+		conn.OnStreamClose(uint64(stream_id), int(error))
+	}()
 }
 
 //export goQuiclyOnStreamReceived

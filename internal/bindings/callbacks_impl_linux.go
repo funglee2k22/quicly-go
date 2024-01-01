@@ -43,6 +43,7 @@ func GetConnection(id uint64) (types.Session, bool) {
 func RemoveConnection(id uint64) {
 	callbackLock.Lock()
 	defer callbackLock.Unlock()
+	fmt.Printf("removed connection id: %d index: %d\n", connectionsRegistry[id].ID(), id)
 	delete(connectionsRegistry, id)
 }
 
@@ -55,6 +56,7 @@ func goQuiclyOnStreamOpen(conn_id C.uint64_t, stream_id C.uint64_t) {
 	callbackLock.RUnlock()
 
 	if !ok {
+		fmt.Printf("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
@@ -72,11 +74,16 @@ func goQuiclyOnStreamClose(conn_id C.uint64_t, stream_id C.uint64_t, error C.int
 		return
 	}
 
-	conn.OnStreamClose(uint64(stream_id), int(error))
+	go func() {
+		mtx_bindings.Lock()
+		defer mtx_bindings.Unlock()
+		conn.OnStreamClose(uint64(stream_id), int(error))
+	}()
 }
 
 //export goQuiclyOnStreamReceived
 func goQuiclyOnStreamReceived(conn_id C.uint64_t, stream_id C.uint64_t, data *C.struct_iovec) {
+	//fmt.Printf("received stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 	callbackLock.RLock()
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 	callbackLock.RUnlock()

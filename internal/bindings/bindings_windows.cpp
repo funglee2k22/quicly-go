@@ -88,7 +88,12 @@ int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* ce
 
   /* setup quicly context */
   ctx = quicly_spec_context;
-  ctx.initial_version = 0xff000000 | 27;
+  ctx.loss = { (1024/8), 1, 500, 8 };
+  ctx.transport_params.max_udp_payload_size = 32768;
+  ctx.transport_params.max_idle_timeout = quicly_idle_timeout_ms;
+  ctx.transport_params.max_ack_delay = 800;
+  ctx.transport_params.max_streams_bidi = MAX_CONNECTIONS;
+
   ctx.tls = &tlsctx;
   quicly_amend_ptls_context(ctx.tls);
   ctx.stream_open = &stream_open;
@@ -213,25 +218,28 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 
 static void on_destroy(quicly_stream_t *stream, int err)
 {
-    //printf( "stream %lld closed, err: %d\n", stream->stream_id, err );
+    printf( "1. stream %lld closed, err: %d\n", stream->stream_id, err );
 
     // callback to go code
     const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
+    printf( "2. stream %lld closed, err: %d\n", stream->stream_id, err );
     goQuiclyOnStreamClose( uint64_t(cid->master_id), uint64_t(stream->stream_id), err );
+    printf( "3. stream %lld closed, err: %d\n", stream->stream_id, err );
 
     quicly_streambuf_destroy(stream, err);
+    printf( "4. stream %lld closed, err: %d\n", stream->stream_id, err );
 }
 
 static void on_stop_sending(quicly_stream_t *stream, int err)
 {
-    //printf("received STOP_SENDING: %lld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
-    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
+    printf("received STOP_SENDING: %lld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
+    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(err), "");
 }
 
 static void on_receive_reset(quicly_stream_t *stream, int err)
 {
-    //printf("received RESET_STREAM: %lld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
-    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
+    printf("received RESET_STREAM: %lld\n", QUICLY_ERROR_GET_ERROR_CODE(err));
+    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(err), "");
 }
 
 static void on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
@@ -281,14 +289,7 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
       return QUICLY_ERROR_FAILED;
 
     // Version used
-    ctx.initial_version = 0xff000000 | 29;
-
-    // Context transport parameters
-    ctx.loss = { (1024/8), 1, 500, 8 };
-    ctx.transport_params.max_udp_payload_size = 1480;
     ctx.transport_params.max_idle_timeout = quicly_idle_timeout_ms;
-    ctx.transport_params.max_ack_delay = 800;
-    ctx.transport_params.max_streams_bidi = MAX_CONNECTIONS;
 
     // Application protocol extension
     ptls_iovec_t proposed_alpn[] = {
@@ -400,13 +401,18 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
 int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
 {
     quicly_address_t dest, src;
-    uint8_t dgrams_buf[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
+    size_t buf_size = 32 * ctx.transport_params.max_udp_payload_size * sizeof(uint8_t);
+    static uint8_t* dgrams_buf = (uint8_t*)malloc( buf_size+1 ); //[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
+    memset( dgrams_buf, '\0', buf_size+1 );
 
     if( conns_table[id] == NULL ) {
         return QUICLY_ERROR_DESTINATION_NOT_FOUND;
     }
 
-    int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, sizeof(dgrams_buf));
+    int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, buf_size);
+
+    //free( dgrams_buf );
+
 
     switch (ret) {
     case 0:
@@ -465,8 +471,7 @@ int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
 
     quicly_streambuf_egress_shutdown(stream);
 
-	// TODO: fix crash on close
-    //quicly_streambuf_destroy(stream, error);
+    quicly_streambuf_destroy(stream, error);
     return QUICLY_OK;
 }
 

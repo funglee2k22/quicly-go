@@ -174,7 +174,7 @@ func (r *QServerConnection) connectionOutgoing() {
 	}()
 
 	sleepCounter := 0
-	nextDump := time.Now().Add(100 * time.Millisecond)
+	nextDump := time.Now().Add(3 * time.Millisecond)
 
 	for {
 		if sleepCounter > 100 {
@@ -199,8 +199,10 @@ func (r *QServerConnection) connectionOutgoing() {
 					continue
 				}
 			}
-			nextDump = nextDump.Add(100 * time.Millisecond)
+			nextDump = nextDump.Add(3 * time.Millisecond)
 			r.exitCritical(false)
+
+			r.flushOutgoingQueue()
 		}
 
 		select {
@@ -241,8 +243,6 @@ func (r *QServerConnection) connectionOutgoing() {
 		default:
 			break
 		}
-
-		r.flushOutgoingQueue()
 	}
 }
 
@@ -272,6 +272,10 @@ func (r *QServerConnection) flushOutgoingQueue() {
 
 		n, err := r.NetConn.WriteToUDP(data, r.returnAddr)
 		r.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
+	}
+
+	for i := 0; i < int(num_packets); i++ {
+		packets_buf[i].Free() // realize the struct copy from C -> go
 	}
 }
 
@@ -361,7 +365,7 @@ func (r *QServerConnection) Close() error {
 		return nil
 	}
 
-	r.Logger.Info().Msgf("Closing stream %d...", r.id)
+	r.Logger.Info().Msgf("Closing connection %d...", r.id)
 	r.cancelFunc()
 
 	r.enterCritical(false)

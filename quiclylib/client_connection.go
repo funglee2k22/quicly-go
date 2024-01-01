@@ -93,7 +93,7 @@ func (s *QClientSession) connectionInHandler() {
 
 	var buffList = make([][]byte, 0, 128)
 	for i := 0; i < 128; i++ {
-		buffList = append(buffList, make([]byte, READ_SIZE))
+		buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
 	}
 
 	for {
@@ -115,7 +115,7 @@ func (s *QClientSession) connectionInHandler() {
 		buffList = buffList[1:]
 		if len(buffList) == 0 {
 			for i := 0; i < 128; i++ {
-				buffList = append(buffList, make([]byte, READ_SIZE))
+				buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
 			}
 		}
 
@@ -127,7 +127,7 @@ func (s *QClientSession) connectionInHandler() {
 		select {
 		case s.incomingQueue <- pkt:
 			break
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 			break
 		}
 	}
@@ -183,17 +183,11 @@ func (s *QClientSession) connectionWriteHandler() {
 		s.handlersWaiter.Done()
 	}()
 
-	nextDump := time.Now().Add(100 * time.Millisecond)
-
-	sleepCounter := 0
 	for {
-		if sleepCounter > 100 {
-			<-time.After(100 * time.Microsecond)
-			sleepCounter = 0
-		}
-		sleepCounter++
-
-		if time.Until(nextDump).Milliseconds() < int64(1) {
+		select {
+		case <-s.Ctx.Done():
+			return
+		case <-time.After(1 * time.Millisecond):
 			s.streamsLock.RLock()
 			for id, sr := range s.streams {
 				stream := sr.(*QStream)
@@ -211,13 +205,6 @@ func (s *QClientSession) connectionWriteHandler() {
 				}
 			}
 			s.streamsLock.RUnlock()
-			nextDump = nextDump.Add(100 * time.Millisecond)
-		}
-
-		select {
-		case <-s.Ctx.Done():
-			return
-		case <-time.After(100 * time.Millisecond):
 			break
 		}
 
@@ -248,6 +235,10 @@ func (s *QClientSession) flushOutgoingQueue() {
 
 		n, err := s.Conn.Write(data)
 		s.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
+	}
+
+	for i := 0; i < int(num_packets); i++ {
+		packets_buf[i].Free() // realize the struct copy from C -> go
 	}
 }
 
