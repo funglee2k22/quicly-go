@@ -22,7 +22,7 @@ extern "C" {
 
 #define MAX_CONNECTIONS 8192
 
-#define QUIC_VERSION    27
+#define QUIC_VERSION    1
 
 static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void on_destroy(quicly_stream_t *stream, int err);
@@ -34,6 +34,9 @@ static void on_receive_reset(quicly_stream_t *stream, int err);
 
 static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
 
+ptls_key_exchange_algorithm_t *qpep_openssl_key_exchanges[] = {&ptls_openssl_x25519, NULL};
+
+ptls_cipher_suite_t *qpep_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256, NULL};
 /**
  * the QUIC context
  */
@@ -43,7 +46,7 @@ static quicly_context_t ctx;
  */
 static quicly_cid_plaintext_t next_cid;
 
-static uint64_t quicly_idle_timeout_ms = 5 * 1000;
+static uint64_t quicly_idle_timeout_ms = 100;
 static char quicly_alpn[MAX_CONNECTIONS] = "";
 static quicly_conn_t *conns_table[MAX_CONNECTIONS] = {};
 static uint64_t requested_cc_algo = QUICLY_CC_RENO;
@@ -54,8 +57,8 @@ static ptls_on_client_hello_t on_client_hello = {on_client_hello_cb};
 static ptls_context_t tlsctx = {
  .random_bytes = ptls_openssl_random_bytes,
  .get_time = &ptls_get_time,
- .key_exchanges = ptls_openssl_key_exchanges,
- .cipher_suites = ptls_openssl_cipher_suites,
+ .key_exchanges = qpep_openssl_key_exchanges,
+ .cipher_suites = qpep_openssl_cipher_suites,
  .on_client_hello = &on_client_hello,
 };
 
@@ -88,7 +91,7 @@ int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* ce
 
   /* setup quicly context */
   ctx = quicly_spec_context;
-  ctx.loss = { (1024/8), 1, 500, 8 };
+  ctx.loss = { (8/1024), 1, 500, 2 };
   ctx.transport_params.max_udp_payload_size = 32768;
   ctx.transport_params.max_idle_timeout = quicly_idle_timeout_ms;
   ctx.transport_params.max_ack_delay = 800;
@@ -226,7 +229,7 @@ static void on_destroy(quicly_stream_t *stream, int err)
     goQuiclyOnStreamClose( uint64_t(cid->master_id), uint64_t(stream->stream_id), err );
     printf( "3. stream %lld closed, err: %d\n", stream->stream_id, err );
 
-    quicly_streambuf_destroy(stream, err);
+    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(err), "");
     printf( "4. stream %lld closed, err: %d\n", stream->stream_id, err );
 }
 
@@ -410,9 +413,6 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
     }
 
     int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, buf_size);
-
-    //free( dgrams_buf );
-
 
     switch (ret) {
     case 0:

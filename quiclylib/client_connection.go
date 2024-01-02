@@ -8,7 +8,6 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
 	"net"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -39,6 +38,25 @@ type QClientSession struct {
 
 var _ net.Listener = &QClientSession{}
 var _ types.Session = &QClientSession{}
+
+func (s *QClientSession) enterCritical(readonly bool) {
+	//s.Logger.Warn().Msgf("Enter Critical section >>")
+	if readonly {
+		s.streamsLock.RLock()
+	} else {
+		s.streamsLock.Lock()
+	}
+	//s.Logger.Warn().Msgf("Enter Critical section <<")
+}
+func (s *QClientSession) exitCritical(readonly bool) {
+	//s.Logger.Warn().Msgf("Exit Critical section >>")
+	if readonly {
+		s.streamsLock.RUnlock()
+	} else {
+		s.streamsLock.Unlock()
+	}
+	//s.Logger.Warn().Msgf("Exit Critical section <<")
+}
 
 func (s *QClientSession) init() {
 	if s.incomingQueue == nil {
@@ -127,7 +145,7 @@ func (s *QClientSession) connectionInHandler() {
 		select {
 		case s.incomingQueue <- pkt:
 			break
-		case <-time.After(10 * time.Millisecond):
+		case <-time.After(2 * time.Millisecond):
 			break
 		}
 	}
@@ -169,7 +187,7 @@ func (s *QClientSession) connectionProcessHandler() {
 
 		case <-s.Ctx.Done():
 			return
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 			break
 		}
 
@@ -188,9 +206,10 @@ func (s *QClientSession) connectionWriteHandler() {
 		case <-s.Ctx.Done():
 			return
 		case <-time.After(1 * time.Millisecond):
-			s.streamsLock.RLock()
+			s.enterCritical(true)
 			for id, sr := range s.streams {
 				stream := sr.(*QStream)
+				stream.init()
 
 				stream.outBufferLock.Lock()
 				data := append([]byte{}, stream.streamOutBuf.Bytes()...)
@@ -204,7 +223,7 @@ func (s *QClientSession) connectionWriteHandler() {
 					continue
 				}
 			}
-			s.streamsLock.RUnlock()
+			s.exitCritical(true)
 			break
 		}
 
@@ -213,7 +232,7 @@ func (s *QClientSession) connectionWriteHandler() {
 }
 
 func (s *QClientSession) flushOutgoingQueue() {
-	num_packets := bindings.Size_t(32)
+	num_packets := bindings.Size_t(0)
 	packets_buf := make([]bindings.Iovec, 32)
 
 	s.exclusiveLock.Lock()
@@ -270,16 +289,16 @@ func (s *QClientSession) OpenStream() types.Stream {
 	}
 	st.init()
 
-	s.streamsLock.Lock()
-	defer s.streamsLock.Unlock()
+	s.enterCritical(false)
+	defer s.exitCritical(false)
 	s.streams[streamId] = st
 
 	return st
 }
 
 func (s *QClientSession) GetStream(id uint64) types.Stream {
-	s.streamsLock.RLock()
-	defer s.streamsLock.RUnlock()
+	s.enterCritical(true)
+	defer s.exitCritical(true)
 	return s.streams[id]
 }
 
@@ -295,9 +314,9 @@ func (s *QClientSession) OnStreamOpen(streamId uint64) {
 		return
 	}
 
-	s.streamsLock.RLock()
+	s.enterCritical(true)
 	st, ok := s.streams[streamId]
-	s.streamsLock.RUnlock()
+	s.exitCritical(true)
 	if ok {
 		s.OnStreamOpenCallback(st)
 		st.OnOpened()
@@ -305,16 +324,16 @@ func (s *QClientSession) OnStreamOpen(streamId uint64) {
 }
 
 func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
-	s.Logger.Debug().Msgf("On close stream: %d\n", streamId)
+	s.Logger.Info().Msgf("On close stream: %d\n", streamId)
 
 	if s.OnStreamCloseCallback == nil {
 		return
 	}
 
-	s.streamsLock.Lock()
+	s.enterCritical(false)
 	st, ok := s.streams[streamId]
 	delete(s.streams, streamId)
-	s.streamsLock.Unlock()
+	s.exitCritical(false)
 
 	if ok {
 		s.OnStreamCloseCallback(st, error)
