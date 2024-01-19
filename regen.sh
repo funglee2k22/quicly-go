@@ -31,7 +31,7 @@ c-for-go -nostamp -nocgo -debug -path "$BASEDIR" -out quiclylib genspec/errors.l
 assert_errorcode
 
 echo [Regen Quicly Bindings package]
-c-for-go -nostamp -debug -withsync -path "$BASEDIR" -out internal genspec/bindings.linux.yml
+c-for-go -nostamp -debug -path "$BASEDIR" -out internal genspec/bindings.linux.yml
 assert_errorcode
 
 echo

@@ -17,17 +17,11 @@ package bindings
 import "C"
 import (
 	"runtime"
-	"sync"
 	"unsafe"
 )
 
-var mtx_bindings sync.Mutex
-
 // QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:34
 func QuiclyInitializeEngine(Is_client uint64, Alpn string, Certificate_file string, Key_file string, Idle_timeout_ms uint64, Cc_algo uint64) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cIs_client, cIs_clientAllocMap := (C.uint64_t)(Is_client), cgoAllocsUnknown
 	Alpn = safeString(Alpn)
 	cAlpn, cAlpnAllocMap := unpackPCharString(Alpn)
@@ -53,9 +47,6 @@ func QuiclyInitializeEngine(Is_client uint64, Alpn string, Certificate_file stri
 
 // QuiclyCloseEngine function as declared in include/quicly_wrapper.h:39
 func QuiclyCloseEngine() int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	__ret := C.QuiclyCloseEngine()
 	__v := (int32)(__ret)
 	return __v
@@ -63,9 +54,6 @@ func QuiclyCloseEngine() int32 {
 
 // QuiclyProcessMsg function as declared in include/quicly_wrapper.h:41
 func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, Dgram_len Size_t, Id *Size_t) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cIs_client, cIs_clientAllocMap := (C.int)(Is_client), cgoAllocsUnknown
 	Address = safeString(Address)
 	cAddress, cAddressAllocMap := unpackPCharString(Address)
@@ -87,9 +75,6 @@ func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, D
 
 // QuiclyConnect function as declared in include/quicly_wrapper.h:43
 func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	Address = safeString(Address)
 	cAddress, cAddressAllocMap := unpackPCharString(Address)
 	cPort, cPortAllocMap := (C.int)(Port), cgoAllocsUnknown
@@ -105,9 +90,6 @@ func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
 
 // QuiclyOpenStream function as declared in include/quicly_wrapper.h:45
 func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (*C.size_t)(unsafe.Pointer(Stream_id)), cgoAllocsUnknown
 	__ret := C.QuiclyOpenStream(cConn_id, cStream_id)
@@ -119,9 +101,6 @@ func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
 
 // QuiclyCloseStream function as declared in include/quicly_wrapper.h:47
 func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
 	cError, cErrorAllocMap := (C.int)(Error), cgoAllocsUnknown
@@ -135,9 +114,6 @@ func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
 
 // QuiclyClose function as declared in include/quicly_wrapper.h:49
 func QuiclyClose(Conn_id Size_t, Error int32) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cError, cErrorAllocMap := (C.int)(Error), cgoAllocsUnknown
 	__ret := C.QuiclyClose(cConn_id, cError)
@@ -149,9 +125,6 @@ func QuiclyClose(Conn_id Size_t, Error int32) int32 {
 
 // QuiclyOutgoingMsgQueue function as declared in include/quicly_wrapper.h:51
 func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cId, cIdAllocMap := (C.size_t)(Id), cgoAllocsUnknown
 	cDgram, cDgramAllocMap := unpackArgSIovec(Dgram)
 	cNum_dgrams, cNum_dgramsAllocMap := (*C.size_t)(unsafe.Pointer(Num_dgrams)), cgoAllocsUnknown
@@ -166,9 +139,6 @@ func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 
 
 // QuiclyWriteStream function as declared in include/quicly_wrapper.h:53
 func QuiclyWriteStream(Conn_id Size_t, Stream_id Size_t, Msg []byte, Dgram_len Size_t) int32 {
-	mtx_bindings.Lock()
-	defer mtx_bindings.Unlock()
-
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
 	cMsg, cMsgAllocMap := copyPCharBytes((*sliceHeader)(unsafe.Pointer(&Msg)))

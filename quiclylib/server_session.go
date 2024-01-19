@@ -78,7 +78,7 @@ func (s *QServerSession) enqueueConnAccept(conn *QServerConnection) {
 
 func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 	addrHash := addrToHash(addr)
-	s.Logger.Debug().Msgf("HASH: %v -> %v", addr, addrHash)
+	s.Logger.Info().Msgf("HASH: %v -> %v", addr, addrHash)
 
 	s.enterCritical()
 	var targetHandler = s.connections[addrHash]
@@ -96,8 +96,6 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 }
 
 func (s *QServerSession) connectionDelete(id uint64) {
-	bindings.RemoveConnection(id)
-
 	s.enterCritical()
 	defer s.exitCritical()
 
@@ -109,7 +107,9 @@ func (s *QServerSession) connectionDelete(id uint64) {
 		}
 	}
 	delete(s.connections, deleteHash)
-	s.Logger.Debug().Msgf("CONN DELETE %d", id)
+	s.Logger.Info().Msgf("CONN DELETE %d", id)
+
+	bindings.RemoveConnection(id)
 }
 
 func (s *QServerSession) connectionInHandler() {
@@ -120,7 +120,7 @@ func (s *QServerSession) connectionInHandler() {
 		s.ctxCancel()
 		runtime.UnlockOSThread()
 		s.connectionsWaiter.Done()
-		s.Logger.Debug().Msgf("SESSION IN END")
+		s.Logger.Info().Msgf("SESSION IN END")
 	}()
 
 	var buffList = make([][]byte, 0, 128)
@@ -128,8 +128,6 @@ func (s *QServerSession) connectionInHandler() {
 	_ = s.NetConn.SetReadBuffer(SMALL_BUFFER_SIZE)
 
 	runtime.LockOSThread()
-
-	sleepCounter := 0
 
 	for {
 		if len(buffList) == 0 {
@@ -145,12 +143,6 @@ func (s *QServerSession) connectionInHandler() {
 			break
 		}
 
-		if sleepCounter > 1000 {
-			<-time.After(100 * time.Microsecond)
-			sleepCounter = 0
-		}
-		sleepCounter++
-
 		_ = s.NetConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 
 		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
@@ -162,7 +154,7 @@ func (s *QServerSession) connectionInHandler() {
 		buf := buffList[0]
 		buffList = buffList[1:]
 
-		s.Logger.Debug().Msgf("CONN READ: %d (%v)", n, addr)
+		s.Logger.Info().Msgf("CONN READ: %d (%v)", n, addr)
 		pkt := &types.Packet{
 			Data:       buf[:n],
 			DataLen:    n,
@@ -171,7 +163,7 @@ func (s *QServerSession) connectionInHandler() {
 
 		conn := s.connectionAdd(addr)
 		conn.receiveIncomingPacket(pkt)
-		s.Logger.Debug().Msgf("CONN READ SENT: %d", n)
+		s.Logger.Info().Msgf("CONN READ SENT: %d", n)
 	}
 }
 
@@ -237,7 +229,6 @@ func (s *QServerSession) OnStreamClose(streamId uint64, error int) {
 
 func (s *QServerSession) Accept() (types.ServerConnection, error) {
 	s.init()
-	defer s.Logger.Info().Msgf("ServerSession terminated")
 
 	for {
 		select {
@@ -263,6 +254,7 @@ func (s *QServerSession) Close() error {
 		if s.OnConnectionClose != nil {
 			s.OnConnectionClose(s)
 		}
+		s.Logger.Info().Msgf("ServerSession terminated")
 	}()
 	s.enterCritical()
 	for _, handler := range s.connections {

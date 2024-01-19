@@ -7,6 +7,7 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"io"
 	"net"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -112,17 +113,11 @@ func (r *QServerConnection) connectionProcess() {
 			debug.PrintStack()
 			_ = r.Close()
 		}
-		r.Logger.Debug().Msgf("CONN PROCESS END")
+		r.Logger.Info().Msgf("CONN PROCESS END")
 	}()
 
-	sleepCounter := 0
-
-	for r.started {
-		if sleepCounter > 100 {
-			<-time.After(100 * time.Microsecond)
-			sleepCounter = 0
-		}
-		sleepCounter++
+	for {
+		<-time.After(1 * time.Millisecond)
 
 		select {
 		case pkt := <-r.incomingQueue:
@@ -130,7 +125,33 @@ func (r *QServerConnection) connectionProcess() {
 				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
 				break
 			}
-			r.Logger.Debug().Msgf("CONN PROC %d: %d", pkt.Streamid, pkt.DataLen)
+			r.Logger.Info().Msgf("CONN PROC %d: %d", pkt.Streamid, pkt.DataLen)
+
+			addr, port := pkt.Address()
+
+			var ptr_id bindings.Size_t = 0
+
+			err := bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), &ptr_id)
+
+			r.id = uint64(ptr_id)
+			bindings.RegisterConnection(r, r.id)
+
+			if err != bindings.QUICLY_OK {
+				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
+					r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.DataLen, err)
+				} else {
+					r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, err)
+				}
+				continue
+			}
+			break
+
+		case pkt := <-r.outgoingQueue:
+			if pkt == nil {
+				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
+				break
+			}
+			r.Logger.Info().Msgf("CONN PROC %d: %d", pkt.Streamid, pkt.DataLen)
 
 			addr, port := pkt.Address()
 
@@ -170,41 +191,35 @@ func (r *QServerConnection) connectionOutgoing() {
 			debug.PrintStack()
 			_ = r.Close()
 		}
-		r.Logger.Debug().Msgf("CONN OUTGOING END")
+		r.Logger.Info().Msgf("CONN OUTGOING END")
 	}()
 
-	sleepCounter := 0
-	nextDump := time.Now().Add(3 * time.Millisecond)
+	for {
+		<-time.After(1 * time.Millisecond)
 
-	for r.started {
-		if sleepCounter > 100 {
-			<-time.After(100 * time.Microsecond)
-			sleepCounter = 0
-		}
-		sleepCounter++
+		r.enterCritical(false)
+		for id, sr := range r.streams {
+			stream := sr.(*QStream)
+			stream.init()
 
-		if time.Until(nextDump).Milliseconds() < int64(1) {
-			r.enterCritical(false)
-			for id, sr := range r.streams {
-				stream := sr.(*QStream)
-				stream.init()
+			stream.outBufferLock.Lock()
+			data := append([]byte{}, stream.streamOutBuf.Bytes()...)
+			stream.streamOutBuf.Reset()
+			stream.outBufferLock.Unlock()
 
-				stream.outBufferLock.Lock()
-				data := append([]byte{}, stream.streamOutBuf.Bytes()...)
-				stream.streamOutBuf.Reset()
-				stream.outBufferLock.Unlock()
-
-				errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.session.ID()), bindings.Size_t(id), data, bindings.Size_t(len(data)))
-				if errcode != errors.QUICLY_OK {
-					r.Logger.Error().Msgf("%v quicly errorcode: %d", r.id, errcode)
-					continue
-				}
+			if len(data) == 0 {
+				continue
 			}
-			nextDump = nextDump.Add(3 * time.Millisecond)
-			r.exitCritical(false)
 
-			r.flushOutgoingQueue()
+			errcode := bindings.QuiclyWriteStream(bindings.Size_t(r.session.ID()), bindings.Size_t(id), data, bindings.Size_t(len(data)))
+			if errcode != errors.QUICLY_OK {
+				r.Logger.Error().Msgf("%v quicly errorcode: %d", r.id, errcode)
+				continue
+			}
 		}
+		r.exitCritical(false)
+
+		r.flushOutgoingQueue()
 
 		select {
 		case <-r.Ctx.Done():
@@ -217,17 +232,18 @@ func (r *QServerConnection) connectionOutgoing() {
 }
 
 func (r *QServerConnection) flushOutgoingQueue() {
-	num_packets := bindings.Size_t(0)
+	num_packets := bindings.Size_t(32)
 	packets_buf := make([]bindings.Iovec, 32)
 
 	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(r.session.ID()), packets_buf, &num_packets)
 
 	switch ret {
-	case bindings.QUICLY_ERROR_FREE_CONNECTION:
-		r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_FREE_CONNECTION", ret)
+	case bindings.QUICLY_ERROR_NOT_OPEN:
+		r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN", ret)
+		r.Close()
 		return
 	default:
-		r.Logger.Debug().Msgf("QUICLY Send failed: %v", ret)
+		r.Logger.Info().Msgf("QUICLY Send failed: %v", ret)
 		return
 	case bindings.QUICLY_OK:
 		break
@@ -241,12 +257,14 @@ func (r *QServerConnection) flushOutgoingQueue() {
 		_ = r.NetConn.SetWriteDeadline(time.Now().Add(2 * time.Millisecond))
 
 		n, err := r.NetConn.WriteToUDP(data, r.returnAddr)
-		r.Logger.Debug().Msgf("SEND packet of len %d [%v]", n, err)
+		r.Logger.Info().Msgf("[%v] SEND packet %d bytes [%v]", r.id, n, err)
 	}
 
-	for i := 0; i < int(num_packets); i++ {
-		packets_buf[i].Free() // realize the struct copy from C -> go
-	}
+	//for i := 0; i < int(num_packets); i++ {
+	//	packets_buf[i].Free() // realize the struct copy from C -> go
+	//}
+	runtime.KeepAlive(num_packets)
+	runtime.KeepAlive(packets_buf)
 }
 
 // --- Session interface --- //
@@ -255,6 +273,7 @@ func (r *QServerConnection) StreamPacket(packet *types.Packet) {
 	if !r.started || packet == nil {
 		return
 	}
+	r.Logger.Info().Msgf("ON SEND PACKET")
 	r.outgoingQueue <- packet
 }
 
@@ -291,6 +310,9 @@ func (r *QServerConnection) OnStreamOpen(streamId uint64) {
 }
 
 func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
+	r.Logger.Info().Msgf(">> On close stream: %d\n", streamId)
+	defer r.Logger.Info().Msgf("<< On close stream: %d\n", streamId)
+
 	st := r.GetStream(streamId)
 	if st == nil {
 		return
@@ -299,6 +321,7 @@ func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
 	_ = st.OnClosed()
 
 	r.enterCritical(false)
+	r.Logger.Info().Msgf("stream closed %d", streamId)
 	delete(r.streams, streamId)
 	r.exitCritical(false)
 
@@ -308,16 +331,14 @@ func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
 }
 
 func (r *QServerConnection) GetStream(id uint64) types.Stream {
-	r.enterCritical(false)
-	defer r.exitCritical(false)
+	r.enterCritical(true)
+	defer r.exitCritical(true)
 	return r.streams[id]
 }
 
 // --- Listener interface --- //
 
 func (r *QServerConnection) Accept() (types.Stream, error) {
-	defer r.Logger.Debug().Msgf("ServerConnection terminated")
-
 	for {
 		select {
 		case st := <-r.streamAcceptQueue:

@@ -13,17 +13,24 @@ extern "C" {
   #include <arpa/inet.h>
 }
 
+#include <mutex>
+#include <thread>
+
+static std::mutex global_lock;
+
 #define MAX_CONNECTIONS 8192
 
-#define QUIC_VERSION    1
+#define QUIC_VERSION    (0xff000000 | 29)
 
 static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void on_destroy(quicly_stream_t *stream, int err);
 
 static void on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
+static void on_sent(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all);
 
 static void on_stop_sending(quicly_stream_t *stream, int err);
 static void on_receive_reset(quicly_stream_t *stream, int err);
+static void on_streambuf_egress_shift(quicly_stream_t *stream, size_t delta);
 
 static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
 
@@ -39,13 +46,15 @@ static quicly_context_t ctx;
  */
 static quicly_cid_plaintext_t next_cid;
 
-static uint64_t quicly_idle_timeout_ms = 100;
+static uint64_t quicly_idle_timeout_ms = 5 * 1000;
 static char quicly_alpn[MAX_CONNECTIONS] = "";
 static quicly_conn_t *conns_table[MAX_CONNECTIONS] = {};
 static uint64_t requested_cc_algo = QUICLY_CC_RENO;
 
 static quicly_stream_open_t stream_open = { on_stream_open };
 static ptls_on_client_hello_t on_client_hello = {on_client_hello_cb};
+static ptls_key_exchange_algorithm_t *qpep_openssl_key_exchanges[] = {&ptls_openssl_x25519, NULL};
+static ptls_cipher_suite_t *qpep_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256, NULL};
 
 static ptls_context_t tlsctx = {
  .random_bytes = ptls_openssl_random_bytes,
@@ -55,11 +64,43 @@ static ptls_context_t tlsctx = {
  .on_client_hello = &on_client_hello,
 };
 
+const quicly_context_t qpep_context = {NULL,                                                 /* tls */
+                                              1280,          /* client_initial_size */
+                                              { (1024 / 8), 1, 500, 2 },                                /* loss */
+                                              {{1 * 1024 * 1024, 1 * 1024 * 1024, 1 * 1024 * 1024}, /* max_stream_data */
+                                               16 * 1024 * 1024,                                    /* max_data */
+                                               10 * 1000,                                           /* idle_timeout (30 seconds) */
+                                               100, /* max_concurrent_streams_bidi */
+                                               0,   /* max_concurrent_streams_uni */
+                                               1472 }, // DEFAULT_MAX_UDP_PAYLOAD_SIZE},
+                                              16777216, //DEFAULT_MAX_PACKETS_PER_KEY,
+                                              65536, // DEFAULT_MAX_CRYPTO_BYTES,
+                                              10, // DEFAULT_INITCWND_PACKETS,
+                                              QUIC_VERSION, // QUICLY_PROTOCOL_VERSION_1,
+                                              3, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
+                                              0, /* ack_frequency */
+                                              600, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
+                                              2, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
+                                              0, /* enlarge_client_hello */
+                                              NULL,
+                                              &stream_open, /* on_stream_open */
+                                              &quicly_default_stream_scheduler,
+                                              NULL, /* receive_datagram_frame */
+                                              NULL, /* on_conn_close */
+                                              &quicly_default_now,
+                                              NULL,
+                                              NULL,
+                                              &quicly_default_crypto_engine,
+                                              &quicly_default_init_cc};
+
 // ----- Startup ----- //
 
 int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* certificate_file, const char* key_file,
       const uint64_t idle_timeout_ms, uint64_t cc_algo )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
   // update idle timeout
   quicly_idle_timeout_ms = idle_timeout_ms;
 
@@ -74,17 +115,16 @@ int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* ce
   memset( quicly_alpn, '\0', sizeof(char) * MAX_CONNECTIONS );
   strncpy( quicly_alpn, alpn, MAX_CONNECTIONS );
 
+  for( int i=0; i<MAX_CONNECTIONS; i++ ) {
+    conns_table[i] = NULL;
+  }
+
   /* setup quicly context */
-  ctx = quicly_spec_context;
-  ctx.loss = { (8/1024), 1, 500, 2 };
-  ctx.transport_params.max_udp_payload_size = 32768;
+  ctx = qpep_context;
   ctx.transport_params.max_idle_timeout = quicly_idle_timeout_ms;
-  ctx.transport_params.max_ack_delay = 800;
-  ctx.transport_params.max_streams_bidi = MAX_CONNECTIONS;
 
   ctx.tls = &tlsctx;
   quicly_amend_ptls_context(ctx.tls);
-  ctx.stream_open = &stream_open;
 
   // load certificate
   int ret;
@@ -126,6 +166,9 @@ int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* ce
 }
 
 int QuiclyCloseEngine() {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
   return QUICLY_OK;
 }
 
@@ -180,8 +223,8 @@ static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_o
 
 static const quicly_stream_callbacks_t stream_callbacks = {
     on_destroy,
-    quicly_streambuf_egress_shift,
-    quicly_streambuf_egress_emit,
+    on_streambuf_egress_shift,
+    on_sent,
     on_stop_sending,
     on_receive,
     on_receive_reset};
@@ -190,7 +233,7 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 {
     int ret;
 
-    //printf("stream opened: %lld\n", stream->stream_id);
+    printf("stream opened: %lld\n\n", stream->stream_id);
 
     if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
         return ret;
@@ -205,16 +248,16 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 
 static void on_destroy(quicly_stream_t *stream, int err)
 {
-    printf( "1. stream %lld closed, err: %d\n", stream->stream_id, err );
+
+std::lock_guard<std::mutex> lock(global_lock);
+
+    fprintf(stderr,  "stream %lld closed, err: %d\n\n", stream->stream_id, err );
 
     // callback to go code
     const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
-    printf( "2. stream %lld closed, err: %d\n", stream->stream_id, err );
     goQuiclyOnStreamClose( uint64_t(cid->master_id), uint64_t(stream->stream_id), err );
-    printf( "3. stream %lld closed, err: %d\n", stream->stream_id, err );
 
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(err), "");
-    printf( "4. stream %lld closed, err: %d\n", stream->stream_id, err );
 }
 
 static void on_stop_sending(quicly_stream_t *stream, int err)
@@ -253,9 +296,26 @@ static void on_receive(quicly_stream_t *stream, size_t off, const void *src, siz
     quicly_streambuf_ingress_shift(stream, input.len);
 }
 
+static void on_streambuf_egress_shift(quicly_stream_t *stream, size_t delta)
+{
+   quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+   quicly_sendbuf_shift(stream, &sbuf->egress, delta);
+    printf("moved buffer: %lld\n", delta);
+}
+
+static void on_sent(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all)
+{
+    quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+    quicly_sendbuf_emit(stream, &sbuf->egress, off, dst, len, wrote_all);
+    printf("sent PACKET: %lld\n", *len);
+}
+
 // ----- Connection ----- //
 int QuiclyConnect( const char* _address, int port, size_t* id )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     // Address resolution
     struct in_addr byte_addr;
     byte_addr.s_addr = inet_addr(_address);
@@ -314,6 +374,9 @@ int QuiclyConnect( const char* _address, int port, size_t* id )
 
 int QuiclyClose( size_t conn_id, int error )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
         return QUICLY_ERROR_FAILED;
     }
@@ -325,6 +388,9 @@ int QuiclyClose( size_t conn_id, int error )
 
 int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, size_t dgram_len, size_t* id )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     size_t off = 0, i = 0;
 
     struct in_addr byte_addr;
@@ -350,10 +416,11 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
         }
 
         /* find the corresponding connection */
-        for (i = 0; i < MAX_CONNECTIONS && conns_table[i] != NULL; ++i)
+        for (i = 0; i < MAX_CONNECTIONS && conns_table[i] != NULL; ++i) {
             if (quicly_is_destination(conns_table[i], NULL, (struct sockaddr*)&address, decoded)) {
                 break;
             }
+        }
         if( i >= MAX_CONNECTIONS ) {
             err = QUICLY_ERROR_DESTINATION_NOT_FOUND;
             break;
@@ -387,27 +454,34 @@ int QuiclyProcessMsg( int is_client, const char* _address, int port, char* msg, 
 
 int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgrams )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     quicly_address_t dest, src;
     size_t buf_size = 32 * ctx.transport_params.max_udp_payload_size * sizeof(uint8_t);
-    static uint8_t* dgrams_buf = (uint8_t*)malloc( buf_size+1 ); //[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
-    memset( dgrams_buf, '\0', buf_size+1 );
+
+    uint8_t* dgrams_buf = (uint8_t*)malloc( buf_size+1 ); //[(*num_dgrams) * ctx.transport_params.max_udp_payload_size];
+    memset( dgrams_buf, '\0', buf_size );
 
     if( conns_table[id] == NULL ) {
+        free( dgrams_buf );
         return QUICLY_ERROR_DESTINATION_NOT_FOUND;
     }
 
     int ret = quicly_send(conns_table[id], &dest, &src, dgrams_out, num_dgrams, dgrams_buf, buf_size);
 
+    // free( dgrams_buf );
+
     switch (ret) {
-    case 0:
-      break;
-//      case 0: {
-//          size_t j;
-//          for (j = 0; j != *num_dgrams; ++j) {
-//              //send_one(fd, &dest.sa, &dgrams[j]);
-//              printf("packet %p %d\n", dgrams_out[j].iov_base, dgrams_out[j].iov_len);
-//          }
-//      } break;
+//    case 0:
+//      break;
+      case 0: {
+          size_t j;
+          for (j = 0; j != *num_dgrams; ++j) {
+              //send_one(fd, &dest.sa, &dgrams[j]);
+              printf("packet %p %d\n\n", dgrams_out[j].iov_base, dgrams_out[j].iov_len);
+          }
+      } break;
     case QUICLY_ERROR_FREE_CONNECTION:
         /* connection has been closed, free, and exit when running as a client */
         //printf("quicly_send returned %d, QUICLY_ERROR_FREE_CONNECTION\n", ret);
@@ -428,6 +502,9 @@ int QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgrams_out, size_t* num_dgr
 
 int QuiclyOpenStream( size_t conn_id, size_t* stream_id )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
         return QUICLY_ERROR_NOT_OPEN;
     }
@@ -444,6 +521,9 @@ int QuiclyOpenStream( size_t conn_id, size_t* stream_id )
 
 int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
         return QUICLY_ERROR_NOT_OPEN;
     }
@@ -453,6 +533,10 @@ int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
         return QUICLY_ERROR_STREAM_NOT_FOUND;
     }
 
+    // callback to go code
+    const quicly_cid_plaintext_t* cid = quicly_get_master_id(stream->conn);
+    goQuiclyOnStreamClose( uint64_t(cid->master_id), uint64_t(stream->stream_id), error );
+
     quicly_streambuf_egress_shutdown(stream);
 
     quicly_streambuf_destroy(stream, error);
@@ -461,6 +545,9 @@ int QuiclyCloseStream( size_t conn_id, size_t stream_id, int error )
 
 int QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram_len )
 {
+
+std::lock_guard<std::mutex> lock(global_lock);
+
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
         return QUICLY_ERROR_NOT_OPEN;
     }

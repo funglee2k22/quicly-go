@@ -142,23 +142,31 @@ func main() {
 		}
 	}
 
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		logger.Warn().Msg("Received termination signal")
+
+		cancel()
+		os.Exit(1)
+	}()
+
 	executorWaitGroup.Add(1)
-	go tester_runner(&executorWaitGroup, ip, ctx)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
-	logger.Warn().Msg("Received termination signal")
-
-	cancel()
-	executorWaitGroup.Wait()
-
-	logger.Warn().Msg("Termination done")
+	tester_runner(&executorWaitGroup, ip, ctx)
 
 	if !(*quicgoFlag) {
+		logger.Warn().Msg("term...")
 		quicly.Terminate()
+		logger.Warn().Msg("terminated")
 	}
+
+	//logger.Warn().Msg("Closing...")
+
+	//executorWaitGroup.Wait()
+
 	logger.Warn().Msg("Closed")
+	os.Exit(0)
 }
 
 func runAsClient_quic(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
@@ -376,7 +384,7 @@ func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 				return
 			}
 
-			logger.Info().Msgf("accepted stream from %v", st.RemoteAddr())
+			logger.Info().Msgf("accepted stream from %v", st)
 
 			wg := &sync.WaitGroup{}
 			wg.Add(2)

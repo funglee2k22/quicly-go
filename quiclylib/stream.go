@@ -98,7 +98,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	}
 	s.inBufferLock.Unlock()
 
-	for {
+	for !s.IsClosed() {
 		select {
 		case <-s.bufferUpdateCh:
 			s.inBufferLock.Lock()
@@ -120,6 +120,8 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 			return total, nil
 		}
 	}
+
+	return 0, nil
 }
 
 func (s *QStream) Write(b []byte) (n int, err error) {
@@ -141,7 +143,7 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 	wr, _ := s.streamOutBuf.Write(b)
 	s.outBufferLock.Unlock()
 
-	s.Logger.Debug().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
+	s.Logger.Info().Msgf("STREAM OUT %d: %d / %d", s.id, wr, s.streamOutBuf.Len())
 	s.lastWrite = time.Now()
 
 	pkt := &types.Packet{
@@ -158,6 +160,7 @@ func (s *QStream) Close() error {
 		s.Logger.Error().Msgf("STREAM %d CLOSED", s.id)
 		return nil
 	}
+	s.Logger.Info().Msgf("STREAM CLOSE %d", s.id)
 	s.closed.Store(true)
 	bindings.QuiclyCloseStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), int32(0))
 	return nil
@@ -168,7 +171,7 @@ func (s *QStream) OnOpened() {
 }
 
 func (s *QStream) OnClosed() error {
-	s.Logger.Info().Msgf("STREAM CLOSE %d", s.id)
+	s.Logger.Info().Msgf("STREAM ON CLOSED %d", s.id)
 	s.closed.Store(true)
 	return nil
 }
@@ -179,7 +182,7 @@ func (s *QStream) OnReceived(data []byte, dataLen int) {
 	s.init()
 
 	if dataLen == 0 {
-		s.Logger.Debug().Msgf("STREAM IN %d EMPTY", s.id)
+		s.Logger.Info().Msgf("STREAM IN %d EMPTY", s.id)
 		return
 	}
 	if s.IsClosed() {
@@ -191,7 +194,7 @@ func (s *QStream) OnReceived(data []byte, dataLen int) {
 	s.streamInBuf.Write(data[:dataLen])
 	s.inBufferLock.Unlock()
 
-	s.Logger.Debug().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
+	s.Logger.Info().Msgf("[%v] BUFFER (%d/%d)", s.id, s.streamInBuf.Len(), READ_SIZE)
 
 	receivedCounter++
 
