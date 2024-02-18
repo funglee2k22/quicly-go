@@ -15,10 +15,9 @@ import (
 var logger log.Logger
 
 func Initialize(options Options) int {
-	log.SetGlobalLevel(log.InfoLevel)
-	log.TimeFieldFormat = time.StampMilli
-
 	if options.Logger == nil {
+		log.SetGlobalLevel(log.InfoLevel)
+		log.TimeFieldFormat = time.StampMilli
 		logger = log.New(os.Stdout).With().Timestamp().Logger()
 	} else {
 		logger = *options.Logger
@@ -30,13 +29,13 @@ func Initialize(options Options) int {
 		return result
 	}
 
-	logger.Info().Msg("Initialized")
+	logger.Debug().Msg("Initialized")
 	return errors.QUICLY_OK
 }
 
 func Terminate() {
 	quiclylib.QuiclyCloseEngine()
-	logger.Info().Msg("Terminated")
+	logger.Debug().Msg("Terminated")
 }
 
 func Listen(localAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) types.ServerSession {
@@ -69,6 +68,8 @@ func Dial(remoteAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) type
 		Logger:    logger.With().Timestamp().Logger(),
 		Callbacks: cb,
 	}
+
+	conn.Logger.Debug().Msgf("[%v] CONNECT %p", conn.ID(), conn)
 
 	return conn
 }

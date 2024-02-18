@@ -41,7 +41,7 @@ var _ types.Session = &QServerSession{}
 
 func addrToHash(addr *net.UDPAddr) uint64 {
 	h64 := fnv.New64a()
-	_, _ = h64.Write([]byte(addr.String()))
+	_, _ = h64.Write([]byte(addr.IP.String()))
 	return h64.Sum64()
 }
 
@@ -78,7 +78,7 @@ func (s *QServerSession) enqueueConnAccept(conn *QServerConnection) {
 
 func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 	addrHash := addrToHash(addr)
-	s.Logger.Info().Msgf("HASH: %v -> %v", addr, addrHash)
+	s.Logger.Debug().Msgf("HASH: %v -> %v", addr, addrHash)
 
 	s.enterCritical()
 	var targetHandler = s.connections[addrHash]
@@ -103,13 +103,15 @@ func (s *QServerSession) connectionDelete(id uint64) {
 	for hash, handler := range s.connections {
 		if handler.id == id {
 			deleteHash = hash
-			break
+			defer func() {
+				delete(s.connections, deleteHash)
+				s.Logger.Debug().Msgf("CONN DELETE %d", id)
+				bindings.RemoveConnection(id)
+				s.Logger.Debug().Msgf("CONN DELETED %d", id)
+			}()
+			return
 		}
 	}
-	delete(s.connections, deleteHash)
-	s.Logger.Info().Msgf("CONN DELETE %d", id)
-
-	bindings.RemoveConnection(id)
 }
 
 func (s *QServerSession) connectionInHandler() {
@@ -120,7 +122,7 @@ func (s *QServerSession) connectionInHandler() {
 		s.ctxCancel()
 		runtime.UnlockOSThread()
 		s.connectionsWaiter.Done()
-		s.Logger.Info().Msgf("SESSION IN END")
+		s.Logger.Debug().Msgf("SESSION IN END")
 	}()
 
 	var buffList = make([][]byte, 0, 128)
@@ -143,27 +145,29 @@ func (s *QServerSession) connectionInHandler() {
 			break
 		}
 
-		_ = s.NetConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		_ = s.NetConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
+		s.Logger.Debug().Msgf(">> CONN %v READ", s.id)
 		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
+		s.Logger.Debug().Msgf("<< CONN %v READ: %d (%v)", s.id, n, err)
 		if n == 0 || (n == 0 && err != nil) {
-			s.Logger.Debug().Msgf("QUICLY No packet")
 			continue
 		}
 
 		buf := buffList[0]
 		buffList = buffList[1:]
 
-		s.Logger.Info().Msgf("CONN READ: %d (%v)", n, addr)
 		pkt := &types.Packet{
 			Data:       buf[:n],
 			DataLen:    n,
 			RetAddress: addr,
 		}
 
+		s.Logger.Debug().Msgf(">> CONN %v ADD: %d", s.id, n)
 		conn := s.connectionAdd(addr)
+		s.Logger.Debug().Msgf(">> CONN %v INCOMING: %d (handler:%p)", s.id, n, conn)
 		conn.receiveIncomingPacket(pkt)
-		s.Logger.Info().Msgf("CONN READ SENT: %d", n)
+		s.Logger.Debug().Msgf("<< CONN %v SENT: %d (handler:%p)", s.id, n, conn)
 	}
 }
 
@@ -233,7 +237,7 @@ func (s *QServerSession) Accept() (types.ServerConnection, error) {
 	for {
 		select {
 		case st := <-s.connAcceptQueue:
-			s.Logger.Info().Msgf("QUICLY accepted new stream: %v", st)
+			s.Logger.Debug().Msgf("QUICLY accepted new stream: %v", st)
 			return st, nil
 		case <-s.Ctx.Done():
 			s.Logger.Error().Msgf("Server connection context closed")
@@ -254,7 +258,7 @@ func (s *QServerSession) Close() error {
 		if s.OnConnectionClose != nil {
 			s.OnConnectionClose(s)
 		}
-		s.Logger.Info().Msgf("ServerSession terminated")
+		s.Logger.Debug().Msgf("ServerSession terminated")
 	}()
 	s.enterCritical()
 	for _, handler := range s.connections {
