@@ -31,6 +31,8 @@ const (
 	QUICLY_ERROR_STREAM_NOT_FOUND = 8
 	// QUICLY_ERROR_UNKNOWN_CC_ALGO as declared in include/quicly_wrapper.h:20
 	QUICLY_ERROR_UNKNOWN_CC_ALGO = 9
+	// QUICLY_ERROR_CANNOT_SEND as declared in include/quicly_wrapper.h:21
+	QUICLY_ERROR_CANNOT_SEND = 10
 )
 
 const (
