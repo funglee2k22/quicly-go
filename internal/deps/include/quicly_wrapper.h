@@ -18,6 +18,7 @@ enum {
   QUICLY_ERROR_NOT_OPEN = 7,       //!< Connection is not open so no state available
   QUICLY_ERROR_STREAM_NOT_FOUND = 8,         //!< Stream was not found in connection
   QUICLY_ERROR_UNKNOWN_CC_ALGO = 9, //!< Requested CC algorithm is not available
+  QUICLY_ERROR_CANNOT_SEND = 10, //!< Send operation did not succeed
 };
 
 enum {
@@ -34,7 +35,7 @@ struct iovec;
 extern int   QuiclyInitializeEngine(
                 uint64_t is_client, const char* alpn,
                 const char* certificate_file, const char* key_file, const uint64_t idle_timeout_ms,
-                uint64_t cc_algo );
+                uint64_t cc_algo, uint64_t trace_quicly );
 
 extern int   QuiclyCloseEngine();
 

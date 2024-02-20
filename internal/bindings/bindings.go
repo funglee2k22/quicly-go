@@ -153,14 +153,3 @@ func QuiclyWriteStream(Conn_id Size_t, Stream_id Size_t, Msg []byte, Dgram_len S
 	__v := (int32)(__ret)
 	return __v
 }
-
-// QuiclyCanSendStream function as declared in include/quicly_wrapper.h:56
-func QuiclyCanSendStream(Conn_id Size_t, Stream_id Size_t) int32 {
-	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
-	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
-	__ret := C.QuiclyCanSendStream(cConn_id, cStream_id)
-	runtime.KeepAlive(cStream_idAllocMap)
-	runtime.KeepAlive(cConn_idAllocMap)
-	__v := (int32)(__ret)
-	return __v
-}
