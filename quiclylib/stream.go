@@ -30,24 +30,15 @@ type QStream struct {
 	readDeadline  time.Time
 	writeDeadline time.Time
 
-	lastWrite  time.Time
-	totalWrite uint64
-	totalRead  uint64
+	totalWrite   uint64
+	totalRead    uint64
+	writtenBytes uint64
+
+	sentBytes  uint64
+	ackedBytes uint64
 
 	Logger log.Logger
 }
-
-type timeoutErrorType struct{}
-
-func (e *timeoutErrorType) Error() string {
-	return "stream timed-out"
-}
-
-func (e *timeoutErrorType) Timeout() bool {
-	return true
-}
-
-var timeoutError = &timeoutErrorType{}
 
 func (s *QStream) init() {
 	if s.streamInBuf == nil {
@@ -76,7 +67,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	s.init()
 
 	if s.IsClosed() {
-		s.Logger.Debug().Msgf("[%d] QSTREAM CLOSED", s.id)
+		s.Logger.Info().Msgf("[%d] QSTREAM CLOSED", s.id)
 		return 0, io.ErrClosedPipe
 	}
 
@@ -123,7 +114,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 			total += wr
 			s.totalRead += uint64(wr)
 			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 3: %d / %d", s.id, wr, cap(b))
-			return total, nil
+			return total, timeoutError
 		}
 	}
 
@@ -138,49 +129,63 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 		return 0, io.ErrClosedPipe
 	}
 
-	if s.writeDeadline.IsZero() {
-		s.writeDeadline = time.Now().Add(3 * time.Second)
-	}
 	defer func() {
-		s.writeDeadline = zeroTime
+		s.totalWrite += uint64(n)
 	}()
 
-	s.Logger.Debug().Msgf("[%d] QSTREAM OUT", s.id)
-	s.lastWrite = time.Now()
-	s.totalWrite += uint64(len(b))
-
 	s.Logger.Debug().Msgf("[%v] SEND packet %d bytes [%v]", s.id, len(b), s.ID())
+	defer s.Logger.Debug().Msgf("[%d] QSTREAM OUT", s.id)
+
+	s.writtenBytes += uint64(len(b))
+
 	errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), b, bindings.Size_t(len(b)))
 	if errcode != errors.QUICLY_OK {
 		s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
-		return 0, nil
+		return 0, io.ErrShortWrite
 	}
+
+	s.Logger.Info().Msgf("[%v] SEND sync (sent:%d / acked:%d)", s.id, s.writtenBytes, s.ackedBytes)
+	for !s.Sync() {
+		s.Logger.Debug().Msgf("[%v] SEND sync (sent:%d / flushed:%d)", s.id, s.writtenBytes, s.ackedBytes)
+		if s.IsClosed() {
+			s.Logger.Debug().Msgf("[%d] QSTREAM OUT CLOSE", s.id)
+			return 0, io.ErrClosedPipe
+		}
+		<-time.After(1 * time.Millisecond)
+	}
+	s.Logger.Info().Msgf("[%v] SENT sync (sent:%d / acked:%d)", s.id, s.writtenBytes, s.ackedBytes)
 
 	return len(b), nil
 }
 
 func (s *QStream) Close() error {
-	s.closed.Store(true)
 	if s.IsClosed() {
 		s.Logger.Error().Msgf("QSTREAM %d CLOSED", s.id)
 		return nil
 	}
-	s.Logger.Debug().Msgf("[%d] QSTREAM CLOSE [read:%v,write:%d]", s.id, s.totalRead, s.totalWrite)
 	bindings.QuiclyCloseStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), int32(0))
-	s.Logger.Debug().Msgf("[%d] QSTREAM CLOSE DONE", s.id)
-
-	s.session.OnStreamClose(s.id, 0)
+	s.Logger.Info().Msgf("[%d] QSTREAM CLOSE [read:%v,write:%d]", s.id, s.totalRead, s.totalWrite)
 	return nil
 }
 
 func (s *QStream) OnOpened() {
-	s.Logger.Debug().Msgf("[%d] QSTREAM OPEN", s.id)
+	s.Logger.Info().Msgf("[%d] QSTREAM OPEN", s.id)
 }
 
 func (s *QStream) OnClosed() error {
 	s.Logger.Debug().Msgf("[%d] QSTREAM ON CLOSED", s.id)
 	s.closed.Store(true)
 	return nil
+}
+
+func (s *QStream) OnSentBytes(size uint64) {
+	s.sentBytes += size
+	s.Logger.Debug().Msgf("[%d] QSTREAM SENT %v bytes (%v)", s.id, size, s.sentBytes)
+}
+
+func (s *QStream) OnAckedSentBytes(size uint64) {
+	s.ackedBytes += size
+	s.Logger.Debug().Msgf("[%d] QSTREAM ACKED %v bytes (%v)", s.id, size, s.ackedBytes)
 }
 
 var receivedCounter = 0
@@ -238,6 +243,10 @@ func (s *QStream) SetReadDeadline(t time.Time) error {
 func (s *QStream) SetWriteDeadline(t time.Time) error {
 	s.writeDeadline = t
 	return nil
+}
+
+func (s *QStream) Sync() bool {
+	return s.writtenBytes > 0 && (s.writtenBytes <= s.ackedBytes)
 }
 
 var _ net.Conn = &QStream{}

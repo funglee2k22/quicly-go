@@ -3,6 +3,7 @@ package quiclylib
 import "C"
 import (
 	"context"
+	"fmt"
 	"github.com/Project-Faster/quicly-go/internal/bindings"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
@@ -49,14 +50,14 @@ func (s *QServerSession) init() {
 	if s.started {
 		return
 	}
+	s.started = true
 	s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
 	s.connections = make(map[uint64]*QServerConnection)
-	s.connAcceptQueue = make(chan *QServerConnection, 32)
+	s.connAcceptQueue = make(chan *QServerConnection, 2048)
 
 	s.connectionsWaiter.Add(1)
 	go s.connectionInHandler()
-	s.started = true
 }
 
 func (s *QServerSession) enterCritical() {
@@ -72,7 +73,9 @@ func (s *QServerSession) exitCritical() {
 
 func (s *QServerSession) enqueueConnAccept(conn *QServerConnection) {
 	if conn != nil {
+		s.Logger.Info().Msgf(">> Receiving new connection: %v", conn)
 		s.connAcceptQueue <- conn
+		s.Logger.Info().Msgf("<< Received new connection: %v", conn)
 	}
 }
 
@@ -81,16 +84,17 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 	s.Logger.Debug().Msgf("HASH: %v -> %v", addr, addrHash)
 
 	s.enterCritical()
+	defer s.exitCritical()
+
 	var targetHandler = s.connections[addrHash]
-	s.exitCritical()
 
 	if targetHandler == nil {
 		targetHandler = &QServerConnection{}
 		targetHandler.init(s, addr, addrHash)
 
-		s.enterCritical()
+		s.Logger.Debug().Msgf("CONN ADD %d", targetHandler.id)
 		s.connections[targetHandler.returnHash] = targetHandler
-		s.exitCritical()
+		s.Logger.Debug().Msgf("CONN ADDED %d", targetHandler.id)
 	}
 	return targetHandler
 }
@@ -99,19 +103,23 @@ func (s *QServerSession) connectionDelete(id uint64) {
 	s.enterCritical()
 	defer s.exitCritical()
 
+	s.Logger.Debug().Msgf("CONN TO DELETE %d", id)
 	var deleteHash uint64 = 0
 	for hash, handler := range s.connections {
 		if handler.id == id {
 			deleteHash = hash
-			defer func() {
-				delete(s.connections, deleteHash)
-				s.Logger.Debug().Msgf("CONN DELETE %d", id)
-				bindings.RemoveConnection(id)
-				s.Logger.Debug().Msgf("CONN DELETED %d", id)
-			}()
-			return
+			break
 		}
 	}
+	if deleteHash != 0 {
+		delete(s.connections, deleteHash)
+		s.Logger.Debug().Msgf("CONN DELETE %d", id)
+		bindings.RemoveConnection(id)
+		s.Logger.Debug().Msgf("CONN DELETED %d", id)
+		return
+	}
+
+	panic(fmt.Sprintf("Connection %d deleted twice!", id))
 }
 
 func (s *QServerSession) connectionInHandler() {
@@ -122,7 +130,6 @@ func (s *QServerSession) connectionInHandler() {
 		s.ctxCancel()
 		runtime.UnlockOSThread()
 		s.connectionsWaiter.Done()
-		s.Logger.Debug().Msgf("SESSION IN END")
 	}()
 
 	var buffList = make([][]byte, 0, 128)
@@ -147,9 +154,9 @@ func (s *QServerSession) connectionInHandler() {
 
 		_ = s.NetConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
-		s.Logger.Debug().Msgf(">> CONN %v READ", s.id)
+		s.Logger.Debug().Msgf(">> SESSION %v READ", s.id)
 		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
-		s.Logger.Debug().Msgf("<< CONN %v READ: %d (%v)", s.id, n, err)
+		s.Logger.Debug().Msgf("<< SESSION %v READ [%v]: %d (%v)", s.id, n, addr, err)
 		if n == 0 || (n == 0 && err != nil) {
 			continue
 		}
@@ -163,11 +170,10 @@ func (s *QServerSession) connectionInHandler() {
 			RetAddress: addr,
 		}
 
-		s.Logger.Debug().Msgf(">> CONN %v ADD: %d", s.id, n)
 		conn := s.connectionAdd(addr)
-		s.Logger.Debug().Msgf(">> CONN %v INCOMING: %d (handler:%p)", s.id, n, conn)
+		s.Logger.Debug().Msgf(">> SESSION %v INCOMING: %d (handler:%v)", s.id, n, conn.uuid)
 		conn.receiveIncomingPacket(pkt)
-		s.Logger.Debug().Msgf("<< CONN %v SENT: %d (handler:%p)", s.id, n, conn)
+		s.Logger.Debug().Msgf("<< SESSION %v SENT [%v]: %d (handler:%v)", s.id, addr, n, conn.uuid)
 	}
 }
 
@@ -242,7 +248,7 @@ func (s *QServerSession) Accept() (types.ServerConnection, error) {
 		case <-s.Ctx.Done():
 			s.Logger.Error().Msgf("Server connection context closed")
 			return nil, io.ErrClosedPipe
-		case <-time.After(1 * time.Millisecond):
+		case <-time.After(1 * time.Second):
 			break
 		default:
 		}
@@ -269,6 +275,10 @@ func (s *QServerSession) Close() error {
 
 	s.connectionsWaiter.Wait()
 	return s.NetConn.Close()
+}
+
+func (s *QServerSession) IsClosed() bool {
+	return s.NetConn == nil
 }
 
 func (s *QServerSession) Addr() net.Addr {

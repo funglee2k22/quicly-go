@@ -4,6 +4,7 @@ import (
 	"github.com/Project-Faster/quicly-go/internal/bindings"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,26 @@ var _ types.Stream = &QStream{}
 const (
 	READ_SIZE         = 512 * 1024
 	SMALL_BUFFER_SIZE = 4 * 1024
+	QUIC_BLOCK        = 1280
 )
+
+type timeoutErrorType struct{}
+
+func (e *timeoutErrorType) Error() string {
+	return "stream timed-out"
+}
+
+func (e *timeoutErrorType) Timeout() bool {
+	return true
+}
+
+func (e *timeoutErrorType) Temporary() bool {
+	return true
+}
+
+var timeoutError = &timeoutErrorType{}
+
+var _ net.Error = timeoutError
 
 func QuiclyInitializeEngine(options types.Options) int {
 	bindings.ResetRegistry()
@@ -66,4 +86,9 @@ func QuiclyInitializeEngine(options types.Options) int {
 func QuiclyCloseEngine() int {
 	result := bindings.QuiclyCloseEngine()
 	return int(result)
+}
+
+func safeClose[T any](dest chan T) {
+	defer recover()
+	close(dest)
 }

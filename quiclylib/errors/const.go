@@ -33,17 +33,19 @@ const (
 	QUICLY_ERROR_UNKNOWN_CC_ALGO = 9
 	// QUICLY_ERROR_CANNOT_SEND as declared in include/quicly_wrapper.h:21
 	QUICLY_ERROR_CANNOT_SEND = 10
+	// QUICLY_ERROR_STREAM_BUSY as declared in include/quicly_wrapper.h:22
+	QUICLY_ERROR_STREAM_BUSY = 11
 )
 
 const (
-	// QUICLY_CC_RENO as declared in include/quicly_wrapper.h:24
+	// QUICLY_CC_RENO as declared in include/quicly_wrapper.h:26
 	QUICLY_CC_RENO = iota
-	// QUICLY_CC_CUBIC as declared in include/quicly_wrapper.h:25
+	// QUICLY_CC_CUBIC as declared in include/quicly_wrapper.h:27
 	QUICLY_CC_CUBIC = 1
-	// QUICLY_CC_PICO as declared in include/quicly_wrapper.h:26
+	// QUICLY_CC_PICO as declared in include/quicly_wrapper.h:28
 	QUICLY_CC_PICO = 2
-	// QUICLY_CC_SEARCH as declared in include/quicly_wrapper.h:27
+	// QUICLY_CC_SEARCH as declared in include/quicly_wrapper.h:29
 	QUICLY_CC_SEARCH = 3
-	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:28
+	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:30
 	QUICLY_CC_LAST = 4
 )

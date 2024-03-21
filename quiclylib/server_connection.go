@@ -6,6 +6,7 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"io"
+	"math/rand"
 	"net"
 	"runtime"
 	"runtime/debug"
@@ -23,6 +24,7 @@ type QServerConnection struct {
 
 	// unexported fields
 	id         uint64
+	uuid       uint64
 	started    bool
 	session    *QServerSession
 	returnAddr *net.UDPAddr
@@ -69,14 +71,18 @@ func (r *QServerConnection) exitCritical(readonly bool) {
 
 func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, addrHash uint64) {
 	if r.started {
+		session.Logger.Warn().Msgf("Server handler was already initialized: %v (%v)", addr, r.uuid)
 		return
 	}
 
-	session.Logger.Debug().Msgf("Server handler init: %v", addr)
+	r.uuid = rand.Uint64()
+	session.Logger.Info().Msgf("Server handler init: %v (%v)", addr, r.uuid)
 
 	if session == nil || addr == nil {
 		panic(errors.QUICLY_ERROR_FAILED)
 	}
+
+	r.started = true
 
 	r.session = session
 	r.Ctx, r.cancelFunc = context.WithCancel(context.Background())
@@ -87,16 +93,21 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	r.lastActivity = time.Now()
 
 	r.streams = make(map[uint64]types.Stream)
-	r.streamAcceptQueue = make(chan types.Stream, 32)
+	r.streamAcceptQueue = make(chan types.Stream, 256)
 
-	r.incomingQueue = make(chan *types.Packet, 1024)
-	r.outgoingQueue = make(chan *types.Packet, 1024)
+	r.incomingQueue = make(chan *types.Packet, 4192)
+	r.outgoingQueue = make(chan *types.Packet, 4192)
 
-	r.routinesWaiter.Add(2)
-	r.started = true
+	r.routinesWaiter.Add(3)
 
 	go r.connectionProcess()
 	go r.connectionOutgoing()
+	go r.connectionSyncHandler()
+
+	go func() {
+		r.routinesWaiter.Wait()
+		r.Close()
+	}()
 }
 
 func (r *QServerConnection) refreshActivity() {
@@ -104,7 +115,8 @@ func (r *QServerConnection) refreshActivity() {
 }
 
 func (r *QServerConnection) checkActivity() bool {
-	if time.Now().Sub(r.lastActivity).Seconds() >= 3 {
+	if time.Now().Sub(r.lastActivity).Seconds() >= 30 {
+		r.Logger.Error().Msgf("QServerConnection Activity fail: %v", time.Now().Sub(r.lastActivity))
 		return false
 	}
 	return true
@@ -120,54 +132,6 @@ func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
 	r.incomingQueue <- pkt
 }
 
-func (r *QServerConnection) connectionProcess() {
-	defer func() {
-		r.routinesWaiter.Done()
-		if err := recover(); err != nil {
-			r.Logger.Error().Msgf("PANIC: %v", err)
-			debug.PrintStack()
-			//_ = r.Close()
-		}
-	}()
-
-	for {
-		<-time.After(1 * time.Millisecond)
-		if !r.checkActivity() {
-			go r.Close()
-			return
-		}
-
-		select {
-		case pkt := <-r.incomingQueue:
-			if pkt == nil {
-				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
-				break
-			}
-
-			r.refreshActivity()
-
-			err := r.handleProcessPacket(pkt)
-			if err != bindings.QUICLY_OK {
-				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
-					r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.DataLen, err)
-				} else {
-					r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, err)
-				}
-				continue
-			}
-			break
-
-		case <-r.Ctx.Done():
-			return
-
-		default:
-			break
-		}
-
-		r.flushOutgoingQueue()
-	}
-}
-
 func (r *QServerConnection) handleProcessPacket(pkt *types.Packet) int32 {
 	addr, port := pkt.Address()
 
@@ -179,39 +143,6 @@ func (r *QServerConnection) handleProcessPacket(pkt *types.Packet) int32 {
 	bindings.RegisterConnection(r, r.id)
 
 	return err
-}
-
-func (r *QServerConnection) connectionOutgoing() {
-	defer func() {
-		r.routinesWaiter.Done()
-		if err := recover(); err != nil {
-			r.Logger.Error().Msgf("PANIC: %v", err)
-			debug.PrintStack()
-			//_ = r.Close()
-		}
-	}()
-
-	for {
-		<-time.After(10 * time.Millisecond)
-		if !r.checkActivity() {
-			go r.Close()
-			return
-		}
-
-		if r.flushOutgoingQueue() != bindings.QUICLY_OK {
-			continue
-		}
-
-		r.refreshActivity()
-
-		select {
-		case <-r.Ctx.Done():
-			return
-
-		default:
-			break
-		}
-	}
 }
 
 func (r *QServerConnection) flushOutgoingQueue() int32 {
@@ -239,7 +170,7 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 
 		data := bindings.IovecToBytes(packets_buf[i])
 
-		_ = r.NetConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_ = r.NetConn.SetWriteDeadline(time.Now().Add(5 * time.Millisecond))
 
 		n, err := r.NetConn.WriteToUDP(data, r.returnAddr)
 		r.Logger.Debug().Msgf("[%v] WRITE packet %d bytes [%v]", r.id, n, err)
@@ -251,6 +182,134 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 	runtime.KeepAlive(packets_buf)
 
 	return bindings.QUICLY_OK
+}
+
+// --- Handlers routines --- //
+
+func (r *QServerConnection) connectionSyncHandler() {
+	defer func() {
+		_ = recover()
+		r.routinesWaiter.Done()
+		r.cancelFunc()
+	}()
+
+	r.Logger.Info().Msgf("CONN SYNC START %v", r.uuid)
+	defer r.Logger.Info().Msgf("CONN SYNC END %v", r.uuid)
+
+	for {
+		select {
+		case <-r.Ctx.Done():
+			return
+		default:
+			r.streamsLock.RLock()
+			for _, stream := range r.streams {
+				if !stream.Sync() {
+					r.refreshActivity()
+				}
+			}
+			r.streamsLock.RUnlock()
+			break
+		}
+	}
+}
+
+func (r *QServerConnection) connectionProcess() {
+	defer func() {
+		r.routinesWaiter.Done()
+		r.cancelFunc()
+		if err := recover(); err != nil {
+			r.Logger.Error().Msgf("PANIC: %v", err)
+			debug.PrintStack()
+			//_ = r.Close()
+		}
+	}()
+
+	r.Logger.Info().Msgf("CONN PROC START %v", r.uuid)
+	defer r.Logger.Info().Msgf("CONN PROC END %v", r.uuid)
+
+	for {
+		<-time.After(1 * time.Millisecond)
+		if !r.checkActivity() {
+			return
+		}
+
+		select {
+		case pkt := <-r.incomingQueue:
+			if pkt == nil {
+				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
+				break
+			}
+			r.Logger.Debug().Msgf("CONN PROC %v", pkt.DataLen)
+
+			r.refreshActivity()
+
+			ret := r.handleProcessPacket(pkt)
+			switch ret {
+			case bindings.QUICLY_ERROR_NOT_OPEN:
+				r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN")
+				return
+			case bindings.QUICLY_ERROR_PACKET_IGNORED:
+				r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.DataLen, ret)
+				continue
+			default:
+				r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, ret)
+				break
+			case bindings.QUICLY_OK:
+				break
+			}
+
+		case <-r.Ctx.Done():
+			return
+
+		default:
+			break
+		}
+
+		r.flushOutgoingQueue()
+	}
+}
+
+func (r *QServerConnection) connectionOutgoing() {
+	defer func() {
+		r.routinesWaiter.Done()
+		r.cancelFunc()
+		if err := recover(); err != nil {
+			r.Logger.Error().Msgf("PANIC: %v", err)
+			debug.PrintStack()
+			//_ = r.Close()
+		}
+	}()
+
+	r.Logger.Info().Msgf("CONN OUT START %v", r.uuid)
+	defer r.Logger.Info().Msgf("CONN OUT END %v", r.uuid)
+
+	for {
+		<-time.After(1 * time.Millisecond)
+		if !r.checkActivity() {
+			return
+		}
+
+		ret := r.flushOutgoingQueue()
+		switch ret {
+		case bindings.QUICLY_ERROR_NOT_OPEN:
+			r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN", ret)
+			return
+		case bindings.QUICLY_OK:
+			break
+		default:
+			continue
+		}
+
+		r.refreshActivity()
+
+		select {
+		case <-r.Ctx.Done():
+			return
+
+		default:
+			break
+		}
+	}
 }
 
 // --- Session interface --- //
@@ -287,13 +346,12 @@ func (r *QServerConnection) OnStreamOpen(streamId uint64) {
 	r.enterCritical(false)
 	r.streams[streamId] = st
 	st.init()
+	st.OnOpened()
 	r.exitCritical(false)
 
 	r.streamAcceptQueue <- st
 
 	r.session.OnStreamOpen(streamId)
-
-	st.OnOpened()
 }
 
 func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
@@ -309,27 +367,14 @@ func (r *QServerConnection) OnStreamClose(streamId uint64, code int) {
 
 	r.enterCritical(false)
 	delete(r.streams, streamId)
-	shouldTerm := len(r.streams) == 0
+	if len(r.streams) == 0 {
+		r.cancelFunc()
+	}
 	r.exitCritical(false)
 
 	if r.session.OnStreamCloseCallback != nil {
 		r.session.OnStreamCloseCallback(st, code)
 	}
-
-	if !shouldTerm {
-		return
-	}
-	go func() {
-		<-time.After(3 * time.Second)
-		r.enterCritical(false)
-		shouldTermNow := len(r.streams) == 0
-		r.exitCritical(false)
-		if shouldTermNow {
-			r.Logger.Debug().Msgf(">> Closing parent: %d\n", r.id)
-			r.Close()
-			r.Logger.Debug().Msgf("<< Closing parent: %d\n", r.id)
-		}
-	}()
 }
 
 func (r *QServerConnection) GetStream(id uint64) types.Stream {
@@ -346,6 +391,7 @@ func (r *QServerConnection) Accept() (types.Stream, error) {
 		case st := <-r.streamAcceptQueue:
 			return st, nil
 		case <-r.Ctx.Done():
+			r.Close()
 			return nil, io.ErrClosedPipe
 		case <-time.After(1 * time.Millisecond):
 			break
@@ -361,19 +407,22 @@ func (r *QServerConnection) Close() error {
 	}
 	r.started = false
 
-	r.Logger.Debug().Msgf("== Connections %v WaitEnd ==\"", r.id)
-	defer r.Logger.Debug().Msgf("== Connections %v End ==\"", r.id)
+	r.Logger.Info().Msgf("== Connections %v WaitEnd ==\"", r.id)
+	defer r.Logger.Info().Msgf("== Connections %v End ==\"", r.id)
 
 	r.cancelFunc()
 
 	for _, stream := range r.streams {
-		r.Logger.Warn().Msgf(">> Trying to close stream %d:%d", r.id, stream.ID())
-		stream.Close()
-		r.Logger.Warn().Msgf(">> Closed stream %d:%d", r.id, stream.ID())
+		go func(st types.Stream) {
+			r.Logger.Warn().Msgf(">> Trying to close stream %d:%d", r.id, st.ID())
+			st.Sync()
+			err := st.Close()
+			r.Logger.Warn().Msgf(">> Closed stream %d:%d (%v)", r.id, st.ID(), err)
+		}(stream)
 	}
-	close(r.incomingQueue)
-	close(r.outgoingQueue)
-	close(r.streamAcceptQueue)
+	safeClose(r.incomingQueue)
+	safeClose(r.outgoingQueue)
+	safeClose(r.streamAcceptQueue)
 
 	r.exitCritical(false)
 
@@ -381,7 +430,15 @@ func (r *QServerConnection) Close() error {
 
 	r.session.connectionDelete(r.id)
 
+	var ptr_id = bindings.Size_t(r.id)
+	var err = bindings.QuiclyClose(ptr_id, 0)
+	r.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", r.id, r.uuid, err)
+
 	return nil
+}
+
+func (s *QServerConnection) IsClosed() bool {
+	return !s.started
 }
 
 func (r *QServerConnection) Addr() net.Addr {

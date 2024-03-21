@@ -20,7 +20,7 @@ import (
 	"unsafe"
 )
 
-// QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:35
+// QuiclyInitializeEngine function as declared in include/quicly_wrapper.h:36
 func QuiclyInitializeEngine(Is_client uint64, Alpn string, Certificate_file string, Key_file string, Idle_timeout_ms uint64, Cc_algo uint64, Trace_quicly uint64) int32 {
 	cIs_client, cIs_clientAllocMap := (C.uint64_t)(Is_client), cgoAllocsUnknown
 	Alpn = safeString(Alpn)
@@ -47,14 +47,14 @@ func QuiclyInitializeEngine(Is_client uint64, Alpn string, Certificate_file stri
 	return __v
 }
 
-// QuiclyCloseEngine function as declared in include/quicly_wrapper.h:40
+// QuiclyCloseEngine function as declared in include/quicly_wrapper.h:41
 func QuiclyCloseEngine() int32 {
 	__ret := C.QuiclyCloseEngine()
 	__v := (int32)(__ret)
 	return __v
 }
 
-// QuiclyProcessMsg function as declared in include/quicly_wrapper.h:42
+// QuiclyProcessMsg function as declared in include/quicly_wrapper.h:43
 func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, Dgram_len Size_t, Id *Size_t) int32 {
 	cIs_client, cIs_clientAllocMap := (C.int)(Is_client), cgoAllocsUnknown
 	Address = safeString(Address)
@@ -75,7 +75,7 @@ func QuiclyProcessMsg(Is_client int32, Address string, Port int32, Msg []byte, D
 	return __v
 }
 
-// QuiclyConnect function as declared in include/quicly_wrapper.h:44
+// QuiclyConnect function as declared in include/quicly_wrapper.h:45
 func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
 	Address = safeString(Address)
 	cAddress, cAddressAllocMap := unpackPCharString(Address)
@@ -90,7 +90,7 @@ func QuiclyConnect(Address string, Port int32, Id *Size_t) int32 {
 	return __v
 }
 
-// QuiclyOpenStream function as declared in include/quicly_wrapper.h:46
+// QuiclyOpenStream function as declared in include/quicly_wrapper.h:47
 func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (*C.size_t)(unsafe.Pointer(Stream_id)), cgoAllocsUnknown
@@ -101,7 +101,7 @@ func QuiclyOpenStream(Conn_id Size_t, Stream_id *Size_t) int32 {
 	return __v
 }
 
-// QuiclyCloseStream function as declared in include/quicly_wrapper.h:48
+// QuiclyCloseStream function as declared in include/quicly_wrapper.h:49
 func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
@@ -114,7 +114,7 @@ func QuiclyCloseStream(Conn_id Size_t, Stream_id Size_t, Error int32) int32 {
 	return __v
 }
 
-// QuiclyClose function as declared in include/quicly_wrapper.h:50
+// QuiclyClose function as declared in include/quicly_wrapper.h:51
 func QuiclyClose(Conn_id Size_t, Error int32) int32 {
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cError, cErrorAllocMap := (C.int)(Error), cgoAllocsUnknown
@@ -125,7 +125,7 @@ func QuiclyClose(Conn_id Size_t, Error int32) int32 {
 	return __v
 }
 
-// QuiclyOutgoingMsgQueue function as declared in include/quicly_wrapper.h:52
+// QuiclyOutgoingMsgQueue function as declared in include/quicly_wrapper.h:53
 func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 {
 	cId, cIdAllocMap := (C.size_t)(Id), cgoAllocsUnknown
 	cDgram, cDgramAllocMap := unpackArgSIovec(Dgram)
@@ -139,7 +139,7 @@ func QuiclyOutgoingMsgQueue(Id Size_t, Dgram []Iovec, Num_dgrams *Size_t) int32 
 	return __v
 }
 
-// QuiclyWriteStream function as declared in include/quicly_wrapper.h:54
+// QuiclyWriteStream function as declared in include/quicly_wrapper.h:55
 func QuiclyWriteStream(Conn_id Size_t, Stream_id Size_t, Msg []byte, Dgram_len Size_t) int32 {
 	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
 	cStream_id, cStream_idAllocMap := (C.size_t)(Stream_id), cgoAllocsUnknown
@@ -149,6 +149,19 @@ func QuiclyWriteStream(Conn_id Size_t, Stream_id Size_t, Msg []byte, Dgram_len S
 	runtime.KeepAlive(cDgram_lenAllocMap)
 	runtime.KeepAlive(cMsgAllocMap)
 	runtime.KeepAlive(cStream_idAllocMap)
+	runtime.KeepAlive(cConn_idAllocMap)
+	__v := (int32)(__ret)
+	return __v
+}
+
+// QuiclySendDatagram function as declared in include/quicly_wrapper.h:57
+func QuiclySendDatagram(Conn_id Size_t, Msg []byte, Dgram_len Size_t) int32 {
+	cConn_id, cConn_idAllocMap := (C.size_t)(Conn_id), cgoAllocsUnknown
+	cMsg, cMsgAllocMap := copyPCharBytes((*sliceHeader)(unsafe.Pointer(&Msg)))
+	cDgram_len, cDgram_lenAllocMap := (C.size_t)(Dgram_len), cgoAllocsUnknown
+	__ret := C.QuiclySendDatagram(cConn_id, cMsg, cDgram_len)
+	runtime.KeepAlive(cDgram_lenAllocMap)
+	runtime.KeepAlive(cMsgAllocMap)
 	runtime.KeepAlive(cConn_idAllocMap)
 	__v := (int32)(__ret)
 	return __v

@@ -62,6 +62,8 @@ const (
 	QUICLY_ERROR_UNKNOWN_CC_ALGO = 9
 	// QUICLY_ERROR_CANNOT_SEND as declared in include/quicly_wrapper.h:21
 	QUICLY_ERROR_CANNOT_SEND = 10
+	// QUICLY_ERROR_STREAM_BUSY as declared in include/quicly_wrapper.h:22
+	QUICLY_ERROR_STREAM_BUSY = 11
 )
 
 const ()

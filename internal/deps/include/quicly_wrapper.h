@@ -19,6 +19,7 @@ enum {
   QUICLY_ERROR_STREAM_NOT_FOUND = 8,         //!< Stream was not found in connection
   QUICLY_ERROR_UNKNOWN_CC_ALGO = 9, //!< Requested CC algorithm is not available
   QUICLY_ERROR_CANNOT_SEND = 10, //!< Send operation did not succeed
+  QUICLY_ERROR_STREAM_BUSY = 11, //!< Send operation is in progress
 };
 
 enum {
@@ -53,11 +54,17 @@ extern int   QuiclyOutgoingMsgQueue( size_t id, struct iovec* dgram, size_t* num
 
 extern int   QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram_len );
 
+extern int   QuiclySendDatagram( size_t conn_id, char* msg, size_t dgram_len );
+
 // Callbacks
 extern void  goQuiclyOnStreamOpen(uint64_t conn_id, uint64_t stream_id);
 
 extern void  goQuiclyOnStreamClose(uint64_t conn_id, uint64_t stream_id, int error);
 
 extern void  goQuiclyOnStreamReceived(uint64_t conn_id, uint64_t stream_id, struct iovec* packet);
+
+extern void  goQuiclyOnStreamSentBytes(uint64_t conn_id, uint64_t stream_id, uint64_t sent);
+
+extern void  goQuiclyOnStreamAckedSentBytes(uint64_t conn_id, uint64_t stream_id, uint64_t acked);
 
 #endif

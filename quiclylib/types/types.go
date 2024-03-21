@@ -33,6 +33,7 @@ type Session interface {
 	// Close closes the listener.
 	// Any blocked Accept operations will be unblocked and return errors.
 	Close() error
+	IsClosed() bool
 }
 
 type ServerSession interface {
@@ -60,9 +61,14 @@ type Stream interface {
 
 	ID() uint64
 
+	Sync() bool
 	OnOpened()
 	OnReceived([]byte, int)
+	OnSentBytes(uint64)
+	OnAckedSentBytes(uint64)
 	OnClosed() error
+
+	IsClosed() bool
 }
 
 type Packet struct {
