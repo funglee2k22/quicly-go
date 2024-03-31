@@ -7,3 +7,4 @@
 [submodule "deps/quicly"]
 	path = deps/quicly
 	url = https://github.com/Project-Faster/quicly.git
+	branch = cc_search
