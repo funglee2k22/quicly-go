@@ -26,7 +26,6 @@ enum {
   QUICLY_CC_RENO = 0,
   QUICLY_CC_CUBIC = 1,
   QUICLY_CC_PICO = 2,
-  QUICLY_CC_SEARCH = 3,
   QUICLY_CC_LAST
 };
 
@@ -36,7 +35,7 @@ struct iovec;
 extern int   QuiclyInitializeEngine(
                 uint64_t is_client, const char* alpn,
                 const char* certificate_file, const char* key_file, const uint64_t idle_timeout_ms,
-                uint64_t cc_algo, uint64_t trace_quicly );
+                uint64_t cc_algo, uint64_t use_search, uint64_t trace_quicly );
 
 extern int   QuiclyCloseEngine();
 

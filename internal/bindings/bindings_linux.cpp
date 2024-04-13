@@ -63,7 +63,11 @@ static quicly_cid_plaintext_t next_cid;
 static uint64_t quicly_idle_timeout_ms = 60 * 1000;
 static char quicly_alpn[MAX_CONNECTIONS] = "";
 static quicly_conn_t *conns_table[MAX_CONNECTIONS] = {};
+
 static uint64_t requested_cc_algo = QUICLY_CC_RENO;
+static quicly_cc_flags_t flags = {
+    .use_slowstart_search = 0,
+};
 
 static quicly_stream_open_t stream_open = { on_stream_open };
 static quicly_closed_by_remote_t connection_closed = { on_connection_close };
@@ -86,6 +90,13 @@ static quicly_tracer_t qtracer = {
  .ctx = NULL,
 };
 
+static int64_t qpep_now_cb(quicly_now_t *self)
+{
+    return goQuiclyNow();
+}
+
+static quicly_now_t qpep_now = {qpep_now_cb};
+
 static quicly_stream_scheduler_t quicly_qpep_stream_scheduler = {qpep_stream_scheduler_can_send, qpep_stream_scheduler_do_send,
                                                              qpep_stream_scheduler_update_state};
 
@@ -97,31 +108,39 @@ const quicly_context_t qpep_context = {NULL,                                    
                                                60 * 1000,                                           /* idle_timeout (30 seconds) */
                                                1024, /* max_concurrent_streams_bidi */
                                                0,   /* max_concurrent_streams_uni */
-                                               65536 }, // DEFAULT_MAX_UDP_PAYLOAD_SIZE},
+                                               65527 }, // DEFAULT_MAX_UDP_PAYLOAD_SIZE},
                                               16777216, //DEFAULT_MAX_PACKETS_PER_KEY,
-                                              65536, // DEFAULT_MAX_CRYPTO_BYTES,
+                                              65535, // DEFAULT_MAX_CRYPTO_BYTES,
                                               10, // DEFAULT_INITCWND_PACKETS,
                                               QUIC_VERSION, // QUICLY_PROTOCOL_VERSION_1,
                                               3, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
                                               1024, /* ack_frequency */
                                               3, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
                                               3, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
+                                              1280 * 1000, // default_jumpstart_cwnd_packets
+                                              1280 * 1000, // max_jumpstart_cwnd_packets
                                               0, /* enlarge_client_hello */
-                                              NULL,
+                                              0, // enable_ecn,
+                                              1, // use_pacing,
+                                              0, // respect_app_limited,
+                                              NULL, // cid_encryptor
                                               &stream_open, /* on_stream_open */
                                               &quicly_qpep_stream_scheduler,
                                               &receive_dgram, /* receive_datagram_frame */
                                               &connection_closed, /* on_conn_close */
-                                              &quicly_default_now,
-                                              NULL,
-                                              NULL,
+                                              &quicly_default_now, //&qpep_now,
+                                              NULL, // save_resumption_token
+                                              NULL, // generate_resumption_token
                                               &quicly_default_crypto_engine,
-                                              &quicly_default_init_cc};
+                                              &quicly_default_init_cc,
+                                              NULL, // update_open_count
+                                              NULL  // async_handshake
+                                       };
 
 // ----- Startup ----- //
 
 int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* certificate_file, const char* key_file,
-      const uint64_t idle_timeout_ms, uint64_t cc_algo, uint64_t trace_quicly )
+      const uint64_t idle_timeout_ms, uint64_t cc_algo, uint64_t use_slowstart, uint64_t trace_quicly )
 {
 
 std::lock_guard<std::mutex> lock(global_lock);
@@ -135,6 +154,7 @@ std::lock_guard<std::mutex> lock(global_lock);
     fprintf(stderr, "requested congestion control [%ld] is not available\n", cc_algo);
     return QUICLY_ERROR_UNKNOWN_CC_ALGO;
   }
+  flags.use_slowstart_search = use_slowstart;
 
   // copy requested alpn
   memset( quicly_alpn, '\0', sizeof(char) * MAX_CONNECTIONS );
@@ -198,10 +218,11 @@ int QuiclyCloseEngine() {
 
 std::lock_guard<std::mutex> lock(global_lock);
 
-  return QUICLY_OK;
+   flags.use_slowstart_search = 0;
+   return QUICLY_OK;
 }
 
-static int apply_requested_cc_algo(quicly_conn_t *conn)
+static int apply_requested_cc_algo(quicly_conn_t *conn, quicly_cc_flags_t flags)
 {
   int ret = QUICLY_OK;
   if( conn == NULL )
@@ -209,16 +230,13 @@ static int apply_requested_cc_algo(quicly_conn_t *conn)
 
   switch( requested_cc_algo ) {
     case QUICLY_CC_RENO:
-      quicly_set_cc(conn, &quicly_cc_type_reno);
+      quicly_set_cc(conn, &quicly_cc_type_reno, flags);
       break;
     case QUICLY_CC_CUBIC:
-      quicly_set_cc(conn, &quicly_cc_type_cubic);
+      quicly_set_cc(conn, &quicly_cc_type_cubic, flags);
       break;
     case QUICLY_CC_PICO:
-      quicly_set_cc(conn, &quicly_cc_type_pico);
-      break;
-    case QUICLY_CC_SEARCH:
-      quicly_set_cc(conn, &quicly_cc_type_search);
+      quicly_set_cc(conn, &quicly_cc_type_pico, flags);
       break;
     default:
       ret = QUICLY_ERROR_UNKNOWN_CC_ALGO;
@@ -262,7 +280,7 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 {
     int ret;
 
-    //printf("stream opened: %lld\n\n", stream->stream_id);
+    printf("stream opened: %lld\n\n", stream->stream_id);
 
     if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
         return ret;
@@ -458,7 +476,7 @@ std::lock_guard<std::mutex> lock(global_lock);
         return ret;
     }
 
-    if( (ret = apply_requested_cc_algo(conns_table[i]) ) != 0 )
+    if( (ret = apply_requested_cc_algo(conns_table[i], flags) ) != 0 )
     {
         fprintf(stderr, "apply_requested_cc_algo failed:%d\n\n", ret);
         return ret;
@@ -540,7 +558,7 @@ std::lock_guard<std::mutex> lock(global_lock);
             ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, decoded, NULL, &next_cid, NULL, NULL);
             next_cid.master_id++;
 
-            if( ret == 0 && (ret = apply_requested_cc_algo(conns_table[(int)(*id)]) ) != 0 )
+            if( ret == 0 && (ret = apply_requested_cc_algo(conns_table[(int)(*id)], flags) ) != 0 )
             {
                 fprintf(stderr, "apply_requested_cc_algo failed:%d\n\n", ret);
             }
@@ -654,6 +672,7 @@ int QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram
 std::lock_guard<std::mutex> lock(global_lock);
 
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
+        printf("write: error not open\n");
         return QUICLY_ERROR_NOT_OPEN;
     }
 
@@ -663,7 +682,9 @@ std::lock_guard<std::mutex> lock(global_lock);
     }
 
     if (quicly_sendstate_is_open(&stream->sendstate) ) {
-        return quicly_streambuf_egress_write(stream, msg, dgram_len);
+        int res = quicly_streambuf_egress_write(stream, msg, dgram_len);
+        //printf("write: %d - %d\n", res, dgram_len );
+        return res;
     }
 
     return QUICLY_OK;

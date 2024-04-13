@@ -41,7 +41,7 @@ var _ net.Error = timeoutError
 func QuiclyInitializeEngine(options types.Options) int {
 	bindings.ResetRegistry()
 
-	is_client, proto, cc_req, certfile, certkey, idle_timeout, trace_quicly := options.Get()
+	is_client, proto, cc_req, cc_slow, certfile, certkey, idle_timeout, trace_quicly := options.Get()
 
 	cwd, _ := os.Getwd()
 	if !filepath.IsAbs(certfile) {
@@ -59,10 +59,6 @@ func QuiclyInitializeEngine(options types.Options) int {
 	case "pico":
 		cc_algo = errors.QUICLY_CC_PICO
 		break
-	case "search":
-		cc_algo = errors.QUICLY_CC_SEARCH
-		break
-
 	case "reno":
 		fallthrough
 	default:
@@ -70,16 +66,24 @@ func QuiclyInitializeEngine(options types.Options) int {
 		break
 	}
 
-	is_client_int := uint64(0)
-	if is_client {
-		is_client_int = uint64(1)
-	}
-	trace_quicly_int := uint64(0)
-	if trace_quicly {
-		trace_quicly_int = uint64(1)
+	var use_search uint64 = 0
+	switch strings.ToLower(cc_slow) {
+	case "search":
+		use_search = 1
+		break
 	}
 
-	result := bindings.QuiclyInitializeEngine(is_client_int, proto, certfile, certkey, idle_timeout, uint64(cc_algo), trace_quicly_int)
+	var is_client_int uint64 = 0
+	if is_client {
+		is_client_int = 1
+	}
+	var trace_quicly_int uint64 = 0
+	if trace_quicly {
+		trace_quicly_int = 1
+	}
+
+	result := bindings.QuiclyInitializeEngine(is_client_int, proto, certfile, certkey, idle_timeout,
+		uint64(cc_algo), use_search, trace_quicly_int)
 	return int(result)
 }
 

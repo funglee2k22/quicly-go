@@ -70,7 +70,11 @@ static quicly_cid_plaintext_t next_cid;
 static uint64_t quicly_idle_timeout_ms = 60 * 1000;
 static char quicly_alpn[MAX_CONNECTIONS] = "";
 static quicly_conn_t *conns_table[MAX_CONNECTIONS] = {};
+
 static uint64_t requested_cc_algo = QUICLY_CC_RENO;
+static quicly_cc_flags_t flags = {
+    .use_slowstart_search = 0,
+};
 
 static quicly_stream_open_t stream_open = { on_stream_open };
 static quicly_closed_by_remote_t connection_closed = { on_connection_close };
@@ -104,31 +108,39 @@ const quicly_context_t qpep_context = {NULL,                                    
                                                60 * 1000,                                           /* idle_timeout (30 seconds) */
                                                1024, /* max_concurrent_streams_bidi */
                                                0,   /* max_concurrent_streams_uni */
-                                               65536 }, // DEFAULT_MAX_UDP_PAYLOAD_SIZE},
+                                               65527 }, // DEFAULT_MAX_UDP_PAYLOAD_SIZE},
                                               16777216, //DEFAULT_MAX_PACKETS_PER_KEY,
-                                              65536, // DEFAULT_MAX_CRYPTO_BYTES,
+                                              65535, // DEFAULT_MAX_CRYPTO_BYTES,
                                               10, // DEFAULT_INITCWND_PACKETS,
                                               QUIC_VERSION, // QUICLY_PROTOCOL_VERSION_1,
                                               3, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
                                               1024, /* ack_frequency */
                                               3, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
                                               3, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
+                                              1280 * 1000, // default_jumpstart_cwnd_packets
+                                              1280 * 1000, // max_jumpstart_cwnd_packets
                                               0, /* enlarge_client_hello */
-                                              NULL,
+                                              0, // enable_ecn,
+                                              1, // use_pacing,
+                                              0, // respect_app_limited,
+                                              NULL, // cid_encryptor
                                               &stream_open, /* on_stream_open */
                                               &quicly_qpep_stream_scheduler,
                                               &receive_dgram, /* receive_datagram_frame */
                                               &connection_closed, /* on_conn_close */
                                               &quicly_default_now,
-                                              NULL,
-                                              NULL,
+                                              NULL, // save_resumption_token
+                                              NULL, // generate_resumption_token
                                               &quicly_default_crypto_engine,
-                                              &quicly_default_init_cc};
+                                              &quicly_default_init_cc,
+                                              NULL, // update_open_count
+                                              NULL  // async_handshake
+                                       };
 
 // ----- Startup ----- //
 
 int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* certificate_file, const char* key_file,
-      const uint64_t idle_timeout_ms, uint64_t cc_algo, uint64_t trace_quicly )
+      const uint64_t idle_timeout_ms, uint64_t cc_algo, uint64_t use_slowstart, uint64_t trace_quicly )
 {
 
 std::lock_guard<std::mutex> lock(global_lock);
@@ -137,7 +149,7 @@ std::lock_guard<std::mutex> lock(global_lock);
   WORD wVersionRequested = MAKEWORD(2, 2);
   int err = WSAStartup(wVersionRequested, &wsaData);
   if( err != 0 || alpn == NULL || strlen(alpn) == 0 || certificate_file == NULL || strlen(certificate_file) == 0 ) {
-      //printf("WSAStartup failed with error: %d\n\n", err);
+      printf("WSAStartup failed with error: %d\n\n", err);
       return QUICLY_ERROR_FAILED;
   }
 
@@ -150,6 +162,7 @@ std::lock_guard<std::mutex> lock(global_lock);
     fprintf(stderr, "requested congestion control [%d] is not available\n\n", cc_algo);
     return QUICLY_ERROR_UNKNOWN_CC_ALGO;
   }
+  flags.use_slowstart_search = use_slowstart;
 
   // copy requested alpn
   memset( quicly_alpn, '\0', sizeof(char) * MAX_CONNECTIONS );
@@ -213,11 +226,13 @@ int QuiclyCloseEngine() {
 
 std::lock_guard<std::mutex> lock(global_lock);
 
+  flags.use_slowstart_search = 0;
+
   WSACleanup();
   return QUICLY_OK;
 }
 
-static int apply_requested_cc_algo(quicly_conn_t *conn)
+static int apply_requested_cc_algo(quicly_conn_t *conn, quicly_cc_flags_t flags)
 {
   int ret = QUICLY_OK;
   if( conn == NULL )
@@ -225,16 +240,13 @@ static int apply_requested_cc_algo(quicly_conn_t *conn)
 
   switch( requested_cc_algo ) {
     case QUICLY_CC_RENO:
-      quicly_set_cc(conn, &quicly_cc_type_reno);
+      quicly_set_cc(conn, &quicly_cc_type_reno, flags);
       break;
     case QUICLY_CC_CUBIC:
-      quicly_set_cc(conn, &quicly_cc_type_cubic);
+      quicly_set_cc(conn, &quicly_cc_type_cubic, flags);
       break;
     case QUICLY_CC_PICO:
-      quicly_set_cc(conn, &quicly_cc_type_pico);
-      break;
-    case QUICLY_CC_SEARCH:
-      quicly_set_cc(conn, &quicly_cc_type_search);
+      quicly_set_cc(conn, &quicly_cc_type_pico, flags);
       break;
     default:
       ret = QUICLY_ERROR_UNKNOWN_CC_ALGO;
@@ -257,7 +269,7 @@ static int on_client_hello_cb(ptls_on_client_hello_t *_self, ptls_t *tls, ptls_o
     const ptls_iovec_t *y;
     for (j = 0; j != params->negotiated_protocols.count; ++j) {
         y = params->negotiated_protocols.list + j;
-        //printf(">> protocol check: %s == %s\n\n", quicly_alpn, y->base);
+        //fprintf(stderr, ">> protocol check: %s == %s\n", quicly_alpn, y->base);
         if (alpn_len == y->len && memcmp(quicly_alpn, y->base, alpn_len) == 0) {
           ret = ptls_set_negotiated_protocol(tls, (const char *)quicly_alpn, alpn_len);
           return ret;
@@ -278,7 +290,7 @@ static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 {
     int ret;
 
-    //printf("stream opened: %lld\n\n", stream->stream_id);
+    printf("stream opened: %lld\n\n", stream->stream_id);
 
     if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
         return ret;
@@ -341,7 +353,7 @@ static void on_receive_reset(quicly_stream_t *stream, int err)
 
 static void on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    //printf("received PACKET: %lld\n", len);
+    printf("received PACKET: %lld\n", len);
     if( stream == NULL || stream->data == NULL || stream->conn == NULL || src == NULL || len == 0 ) {
        // printf("received PACKET: stream was closed\n");
         return;
@@ -474,7 +486,7 @@ std::lock_guard<std::mutex> lock(global_lock);
         return ret;
     }
 
-    if( (ret = apply_requested_cc_algo(conns_table[i]) ) != 0 )
+    if( (ret = apply_requested_cc_algo(conns_table[i], flags) ) != 0 )
     {
         fprintf(stderr, "apply_requested_cc_algo failed:%d\n\n", ret);
         return ret;
@@ -556,11 +568,10 @@ std::lock_guard<std::mutex> lock(global_lock);
             ret = quicly_accept(conns_table + *id, &ctx, NULL, (struct sockaddr*)&address, decoded, NULL, &next_cid, NULL, NULL);
             next_cid.master_id++;
 
-            if( ret == 0 && (ret = apply_requested_cc_algo(conns_table[(int)(*id)]) ) != 0 )
+            if( ret == 0 && (ret = apply_requested_cc_algo(conns_table[(int)(*id)], flags) ) != 0 )
             {
                 fprintf(stderr, "apply_requested_cc_algo failed:%d\n\n", ret);
             }
-            //fprintf(stderr, "accept err: %d\n", ret);
         }
         if( ret != 0 ) {
           *id = 0;
@@ -670,16 +681,20 @@ int QuiclyWriteStream( size_t conn_id, size_t stream_id, char* msg, size_t dgram
 std::lock_guard<std::mutex> lock(global_lock);
 
     if( conn_id > MAX_CONNECTIONS-1 || conns_table[conn_id] == NULL ) {
+        printf("write: error not open\n");
         return QUICLY_ERROR_NOT_OPEN;
     }
 
     quicly_stream_t *stream = quicly_get_stream(conns_table[conn_id], stream_id);
     if( stream == NULL ) {
+        printf("write: error not found\n");
         return QUICLY_ERROR_STREAM_NOT_FOUND;
     }
 
     if (quicly_sendstate_is_open(&stream->sendstate) ) {
-        return quicly_streambuf_egress_write(stream, msg, dgram_len);
+        int res = quicly_streambuf_egress_write(stream, msg, dgram_len);
+        //printf("write: %d - %d\n", res, dgram_len );
+        return res;
     }
 
     return QUICLY_OK;
@@ -743,7 +758,7 @@ static int qpep_stream_scheduler_can_send(quicly_stream_scheduler_t *self, quicl
     }
 
     int can_send = quicly_linklist_is_linked(&sched->active);
-    //printf("can_send: %d\n", can_send);
+    // printf("can_send: %d\n", can_send);
     return can_send;
 }
 

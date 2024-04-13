@@ -77,18 +77,21 @@ func main() {
 	var certFile = flag.String("cert", "server_cert.pem", "PEM certificate to use")
 	var certKey = flag.String("key", "", "PEM key for the certificate")
 	var randServerPayload = flag.Int("payload", 4096, "Random payload to download on server connection")
-	var ccaFlag = flag.String("cca", "reno", "Congestion algorithm to use (reno|cubic|pico|search)")
+	var ccaFlag = flag.String("cca", "reno", "Congestion algorithm to use (reno|cubic|pico)")
+	var ccaSlowFlag = flag.String("ccslow", "basic", "Slowstart algorithm to use (basic|search)")
 
 	flag.Parse()
 
 	options := quicly.Options{
-		Logger:              &logger,
-		IsClient:            *clientFlag,
-		CertificateFile:     *certFile,
-		CertificateKey:      *certKey,
-		ApplicationProtocol: "qpep_quicly",
-		IdleTimeoutMs:       3000,
-		CongestionAlgorithm: *ccaFlag,
+		Logger:               &logger,
+		IsClient:             *clientFlag,
+		CertificateFile:      *certFile,
+		CertificateKey:       *certKey,
+		ApplicationProtocol:  "qpep_quicly",
+		IdleTimeoutMs:        3000,
+		CongestionAlgorithm:  *ccaFlag,
+		CCSlowstartAlgorithm: *ccaSlowFlag,
+		TraceQuicly:          true,
 	}
 
 	logger.Info().Msgf("Options: %v", options)
@@ -127,7 +130,7 @@ func main() {
 		if !(*quicgoFlag) {
 			tester_runner = runAsClient_quicly
 		} else {
-			tester_runner = runAsClient_quic
+			tester_runner = runAsClient_quicgo
 		}
 
 	} else {
@@ -138,7 +141,7 @@ func main() {
 		if !(*quicgoFlag) {
 			tester_runner = runAsServer_quicly
 		} else {
-			tester_runner = runAsServer_quic
+			tester_runner = runAsServer_quicgo
 		}
 	}
 
@@ -169,7 +172,7 @@ func main() {
 	os.Exit(0)
 }
 
-func runAsClient_quic(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
+func runAsClient_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
 	logger.Info().Msgf("Starting as client")
 	defer wgOut.Done()
 
@@ -200,7 +203,7 @@ func runAsClient_quic(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Contex
 		return
 	}
 
-	defer logger.Info().Msgf("END: runAsClient_quic")
+	defer logger.Info().Msgf("END: runAsClient_quicgo")
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
@@ -217,7 +220,7 @@ func runAsClient_quic(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Contex
 	wg.Wait()
 }
 
-func runAsServer_quic(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
+func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
 	logger.Info().Msgf("Starting as server")
 	defer wgOut.Done()
 
@@ -261,7 +264,7 @@ func runAsServer_quic(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Contex
 		c.Close()
 	}()
 
-	defer logger.Info().Msgf("END: runAsServer_quic")
+	defer logger.Info().Msgf("END: runAsServer_quicgo")
 
 	fulldata := ctx.Value("Payload").(*bytes.Buffer)
 	for {
@@ -460,10 +463,12 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 }
 
 func dumpDataToFile(prefix string, buf *bytes.Buffer) {
-	name := fmt.Sprintf("%s_%v.bin", prefix, time.Now().Unix())
-	_ = os.WriteFile(name, buf.Bytes(), 0777)
+	if false {
+		name := fmt.Sprintf("%s_%v.bin", prefix, time.Now().Unix())
+		_ = os.WriteFile(name, buf.Bytes(), 0777)
 
-	logger.Info().Msgf("RECV DATA dumped to: %s (len: %d)", name, buf.Len())
+		logger.Info().Msgf("RECV DATA dumped to: %s (len: %d)", name, buf.Len())
+	}
 }
 
 func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
