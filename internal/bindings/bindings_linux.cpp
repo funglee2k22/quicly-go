@@ -90,13 +90,6 @@ static quicly_tracer_t qtracer = {
  .ctx = NULL,
 };
 
-static int64_t qpep_now_cb(quicly_now_t *self)
-{
-    return goQuiclyNow();
-}
-
-static quicly_now_t qpep_now = {qpep_now_cb};
-
 static quicly_stream_scheduler_t quicly_qpep_stream_scheduler = {qpep_stream_scheduler_can_send, qpep_stream_scheduler_do_send,
                                                              qpep_stream_scheduler_update_state};
 
