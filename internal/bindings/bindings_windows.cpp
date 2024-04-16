@@ -353,7 +353,7 @@ static void on_receive_reset(quicly_stream_t *stream, int err)
 
 static void on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    printf("received PACKET: %lld\n", len);
+    //printf("received PACKET: %lld\n", len);
     if( stream == NULL || stream->data == NULL || stream->conn == NULL || src == NULL || len == 0 ) {
        // printf("received PACKET: stream was closed\n");
         return;
