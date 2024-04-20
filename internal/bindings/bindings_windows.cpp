@@ -114,14 +114,14 @@ const quicly_context_t qpep_context = {NULL,                                    
                                               10, // DEFAULT_INITCWND_PACKETS,
                                               QUIC_VERSION, // QUICLY_PROTOCOL_VERSION_1,
                                               3, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
-                                              1024, /* ack_frequency */
+                                              64, /* ack_frequency */
                                               3, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
                                               3, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
                                               1280 * 1000, // default_jumpstart_cwnd_packets
                                               1280 * 1000, // max_jumpstart_cwnd_packets
                                               0, /* enlarge_client_hello */
                                               0, // enable_ecn,
-                                              1, // use_pacing,
+                                              0, // use_pacing,
                                               0, // respect_app_limited,
                                               NULL, // cid_encryptor
                                               &stream_open, /* on_stream_open */

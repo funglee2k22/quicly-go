@@ -144,16 +144,9 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 		return 0, io.ErrShortWrite
 	}
 
-	s.Logger.Info().Msgf("[%v] SEND sync (sent:%d / acked:%d)", s.id, s.writtenBytes, s.ackedBytes)
-	for !s.Sync() {
-		s.Logger.Debug().Msgf("[%v] SEND sync (sent:%d / flushed:%d)", s.id, s.writtenBytes, s.ackedBytes)
-		if s.IsClosed() {
-			s.Logger.Debug().Msgf("[%d] QSTREAM OUT CLOSE", s.id)
-			return 0, io.ErrClosedPipe
-		}
-		<-time.After(1 * time.Millisecond)
+	if err := s.waitSentBytes(uint64(len(b))); err != nil {
+		return 0, err
 	}
-	s.Logger.Info().Msgf("[%v] SENT sync (sent:%d / acked:%d)", s.id, s.writtenBytes, s.ackedBytes)
 
 	return len(b), nil
 }
@@ -242,6 +235,25 @@ func (s *QStream) SetReadDeadline(t time.Time) error {
 
 func (s *QStream) SetWriteDeadline(t time.Time) error {
 	s.writeDeadline = t
+	return nil
+}
+
+func (s *QStream) waitSentBytes(size uint64) error {
+	begin := s.sentBytes
+
+	s.Logger.Debug().Msgf("[%v] SEND START sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
+	for s.sentBytes < begin+size {
+
+		s.Logger.Debug().Msgf("[%v] SEND STEP sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
+		if s.IsClosed() {
+			s.Logger.Debug().Msgf("[%d] QSTREAM OUT CLOSE", s.id)
+			return io.ErrClosedPipe
+		}
+
+		<-time.After(1 * time.Millisecond)
+	}
+
+	s.Logger.Debug().Msgf("[%v] SEND END sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 	return nil
 }
 
