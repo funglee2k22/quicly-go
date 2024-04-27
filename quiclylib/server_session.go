@@ -9,6 +9,7 @@ import (
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"hash/fnv"
 	"io"
+	"math/rand"
 	"net"
 	"runtime"
 	"sync"
@@ -51,6 +52,7 @@ func (s *QServerSession) init() {
 		return
 	}
 	s.started = true
+	s.id = rand.Uint64()
 	s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
 	s.connections = make(map[uint64]*QServerConnection)
@@ -92,9 +94,8 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 		targetHandler = &QServerConnection{}
 		targetHandler.init(s, addr, addrHash)
 
-		s.Logger.Debug().Msgf("CONN ADD %d", targetHandler.id)
+		s.Logger.Debug().Msgf("CONN ADD %d", targetHandler.ID())
 		s.connections[targetHandler.returnHash] = targetHandler
-		s.Logger.Debug().Msgf("CONN ADDED %d", targetHandler.id)
 	}
 	return targetHandler
 }
@@ -106,7 +107,7 @@ func (s *QServerSession) connectionDelete(id uint64) {
 	s.Logger.Debug().Msgf("CONN TO DELETE %d", id)
 	var deleteHash uint64 = 0
 	for hash, handler := range s.connections {
-		if handler.id == id {
+		if handler.ID() == id {
 			deleteHash = hash
 			break
 		}
@@ -115,7 +116,6 @@ func (s *QServerSession) connectionDelete(id uint64) {
 		delete(s.connections, deleteHash)
 		s.Logger.Debug().Msgf("CONN DELETE %d", id)
 		bindings.RemoveConnection(id)
-		s.Logger.Debug().Msgf("CONN DELETED %d", id)
 		return
 	}
 
@@ -154,12 +154,11 @@ func (s *QServerSession) connectionInHandler() {
 
 		_ = s.NetConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
-		s.Logger.Debug().Msgf(">> SESSION %v READ", s.id)
 		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
-		s.Logger.Debug().Msgf("<< SESSION %v READ [%v]: %d (%v)", s.id, n, addr, err)
 		if n == 0 || (n == 0 && err != nil) {
 			continue
 		}
+		s.Logger.Debug().Msgf("SESSION %v READ [%v]: %d (%v)", s.id, n, addr, err)
 
 		buf := buffList[0]
 		buffList = buffList[1:]
@@ -171,9 +170,9 @@ func (s *QServerSession) connectionInHandler() {
 		}
 
 		conn := s.connectionAdd(addr)
-		s.Logger.Debug().Msgf(">> SESSION %v INCOMING: %d (handler:%v)", s.id, n, conn.uuid)
+		s.Logger.Debug().Msgf(">> SESSION %v SEND: %d (handler:%v)", s.id, n, conn.id)
 		conn.receiveIncomingPacket(pkt)
-		s.Logger.Debug().Msgf("<< SESSION %v SENT [%v]: %d (handler:%v)", s.id, addr, n, conn.uuid)
+		s.Logger.Debug().Msgf("<< SESSION %v SEND [%v]: %d (handler:%v)", s.id, addr, n, conn.id)
 	}
 }
 

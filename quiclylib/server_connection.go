@@ -24,7 +24,6 @@ type QServerConnection struct {
 
 	// unexported fields
 	id         uint64
-	uuid       uint64
 	started    bool
 	session    *QServerSession
 	returnAddr *net.UDPAddr
@@ -71,12 +70,12 @@ func (r *QServerConnection) exitCritical(readonly bool) {
 
 func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, addrHash uint64) {
 	if r.started {
-		session.Logger.Warn().Msgf("Server handler was already initialized: %v (%v)", addr, r.uuid)
+		session.Logger.Warn().Msgf("Server handler was already initialized: %v (%v)", addr, r.id)
 		return
 	}
 
-	r.uuid = rand.Uint64()
-	session.Logger.Info().Msgf("Server handler init: %v (%v)", addr, r.uuid)
+	r.id = rand.Uint64()
+	session.Logger.Info().Msgf("Server handler init: %v (%v)", addr, r.id)
 
 	if session == nil || addr == nil {
 		panic(errors.QUICLY_ERROR_FAILED)
@@ -135,12 +134,11 @@ func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
 func (r *QServerConnection) handleProcessPacket(pkt *types.Packet) int32 {
 	addr, port := pkt.Address()
 
-	var ptr_id bindings.Size_t = 0
+	err := bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), bindings.Size_t(r.id))
 
-	err := bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), &ptr_id)
-
-	r.id = uint64(ptr_id)
-	bindings.RegisterConnection(r, r.id)
+	if err == errors.QUICLY_OK {
+		bindings.RegisterConnection(r, r.id)
+	}
 
 	return err
 }
@@ -149,19 +147,20 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 	num_packets := bindings.Size_t(32)
 	packets_buf := make([]bindings.Iovec, 32)
 
-	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(r.session.ID()), packets_buf, &num_packets)
+	connId := bindings.Size_t(r.id)
+
+	var ret = bindings.QuiclyOutgoingMsgQueue(connId, packets_buf, &num_packets)
+	if int(num_packets) == 0 {
+		return bindings.QUICLY_OK
+	}
 
 	switch ret {
-	case bindings.QUICLY_ERROR_NOT_OPEN:
-		r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN", ret)
-		return ret
 	default:
 		r.Logger.Debug().Msgf("QUICLY Send failed: %v", ret)
 		return ret
+	case bindings.QUICLY_ERROR_DESTINATION_NOT_FOUND:
+		return bindings.QUICLY_OK
 	case bindings.QUICLY_OK:
-		if int(num_packets) == 0 {
-			return ret
-		}
 		break
 	}
 
@@ -193,8 +192,8 @@ func (r *QServerConnection) connectionSyncHandler() {
 		r.cancelFunc()
 	}()
 
-	r.Logger.Info().Msgf("CONN SYNC START %v", r.uuid)
-	defer r.Logger.Info().Msgf("CONN SYNC END %v", r.uuid)
+	r.Logger.Info().Msgf("CONN SYNC START %v", r.id)
+	defer r.Logger.Info().Msgf("CONN SYNC END %v", r.id)
 
 	for {
 		select {
@@ -224,48 +223,58 @@ func (r *QServerConnection) connectionProcess() {
 		}
 	}()
 
-	r.Logger.Info().Msgf("CONN PROC START %v", r.uuid)
-	defer r.Logger.Info().Msgf("CONN PROC END %v", r.uuid)
+	r.Logger.Info().Msgf("CONN PROC START %v", r.id)
+	defer r.Logger.Info().Msgf("CONN PROC END %v", r.id)
+
+	buffer := make([]*types.Packet, 0, 32)
 
 	for {
-		<-time.After(1 * time.Millisecond)
 		if !r.checkActivity() {
 			return
 		}
 
 		select {
-		case pkt := <-r.incomingQueue:
-			if pkt == nil {
-				r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
-				break
-			}
-			r.Logger.Debug().Msgf("CONN PROC %v", pkt.DataLen)
-
-			r.refreshActivity()
-
-			ret := r.handleProcessPacket(pkt)
-			switch ret {
-			case bindings.QUICLY_ERROR_NOT_OPEN:
-				r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN")
-				return
-			case bindings.QUICLY_ERROR_PACKET_IGNORED:
-				r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.DataLen, ret)
-				continue
-			default:
-				r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, ret)
-				break
-			case bindings.QUICLY_OK:
-				break
-			}
-
 		case <-r.Ctx.Done():
 			return
 
-		default:
+		case pkt := <-r.incomingQueue:
+			buffer = append(buffer, pkt)
+			break
+
+		case <-time.After(1 * time.Millisecond):
+			for _, pkt := range buffer {
+				if pkt == nil {
+					r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
+					break
+				}
+				r.Logger.Debug().Msgf("CONN PROC %v", pkt.DataLen)
+
+				r.refreshActivity()
+
+				ret := r.handleProcessPacket(pkt)
+				switch ret {
+				case bindings.QUICLY_ERROR_NOT_OPEN:
+					r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN")
+					return
+				case bindings.QUICLY_ERROR_PACKET_IGNORED:
+					r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.DataLen, ret)
+					continue
+				default:
+					r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, ret)
+					break
+				case bindings.QUICLY_OK:
+					break
+				}
+				r.Logger.Debug().Msgf("CONN PROC %v DONE", pkt.DataLen)
+			}
+			buffer = buffer[:0]
+
+			if ret := r.flushOutgoingQueue(); ret != errors.QUICLY_OK {
+				r.Logger.Debug().Msgf("CONN PROC ERR %v", ret)
+				return
+			}
 			break
 		}
-
-		r.flushOutgoingQueue()
 	}
 }
 
@@ -280,8 +289,8 @@ func (r *QServerConnection) connectionOutgoing() {
 		}
 	}()
 
-	r.Logger.Info().Msgf("CONN OUT START %v", r.uuid)
-	defer r.Logger.Info().Msgf("CONN OUT END %v", r.uuid)
+	r.Logger.Info().Msgf("CONN OUT START %v", r.id)
+	defer r.Logger.Info().Msgf("CONN OUT END %v", r.id)
 
 	for {
 		<-time.After(1 * time.Millisecond)
@@ -290,9 +299,13 @@ func (r *QServerConnection) connectionOutgoing() {
 		}
 
 		ret := r.flushOutgoingQueue()
+		r.Logger.Debug().Msgf("CONN OUT ERR %v", ret)
+
 		switch ret {
 		case bindings.QUICLY_ERROR_NOT_OPEN:
-			r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN", ret)
+			fallthrough
+		case bindings.QUICLY_ERROR_DESTINATION_NOT_FOUND:
+			r.Logger.Error().Msgf("QUICLY Send failed: %v", ret)
 			return
 		case bindings.QUICLY_OK:
 			break
@@ -430,9 +443,9 @@ func (r *QServerConnection) Close() error {
 
 	r.session.connectionDelete(r.id)
 
-	var ptr_id = bindings.Size_t(r.id)
-	var err = bindings.QuiclyClose(ptr_id, 0)
-	r.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", r.id, r.uuid, err)
+	var ptrId = bindings.Size_t(r.id)
+	var err = bindings.QuiclyClose(ptrId, 0)
+	r.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", r.id, r.id, err)
 
 	return nil
 }

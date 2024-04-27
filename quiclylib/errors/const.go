@@ -44,8 +44,6 @@ const (
 	QUICLY_CC_CUBIC = 1
 	// QUICLY_CC_PICO as declared in include/quicly_wrapper.h:28
 	QUICLY_CC_PICO = 2
-	// QUICLY_CC_SEARCH as declared in include/quicly_wrapper.h:29
-	QUICLY_CC_SEARCH = 3
-	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:30
-	QUICLY_CC_LAST = 4
+	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:29
+	QUICLY_CC_LAST = 3
 )

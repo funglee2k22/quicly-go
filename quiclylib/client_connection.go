@@ -25,7 +25,6 @@ type QClientSession struct {
 
 	// unexported fields
 	id             uint64
-	uuid           uint64
 	connected      bool
 	ctxCancel      context.CancelFunc
 	handlersWaiter sync.WaitGroup
@@ -69,15 +68,15 @@ func (s *QClientSession) init() {
 	if s.incomingQueue == nil {
 		s.Ctx, s.ctxCancel = context.WithCancel(s.Ctx)
 
-		s.uuid = rand.Uint64()
-		s.Logger.Info().Msgf("Client handler init: %v", s.uuid)
+		s.id = rand.Uint64()
+		s.Logger.Info().Msgf("Client handler init: %v", s.id)
 
 		s.incomingQueue = make(chan *types.Packet, 1024)
 		s.outgoingQueue = make(chan *types.Packet, 1024)
 		s.streams = make(map[uint64]types.Stream)
 		s.lastActivity = time.Now()
 	} else {
-		s.Logger.Warn().Msgf("Client handler was already init: %v", s.uuid)
+		s.Logger.Warn().Msgf("Client handler was already init: %v", s.id)
 	}
 }
 
@@ -88,15 +87,14 @@ func (s *QClientSession) connect() int {
 
 	s.init()
 
-	var ptr_id bindings.Size_t = 0
+	ptrId := bindings.Size_t(s.id)
 
 	udpAddr := s.Addr().(*net.UDPAddr)
 
-	if ret := bindings.QuiclyConnect(udpAddr.IP.String(), int32(udpAddr.Port), &ptr_id); ret != errors.QUICLY_OK {
+	if ret := bindings.QuiclyConnect(udpAddr.IP.String(), int32(udpAddr.Port), ptrId); ret != errors.QUICLY_OK {
 		return int(ret)
 	}
 
-	s.id = uint64(ptr_id)
 	bindings.RegisterConnection(s, s.id)
 
 	s.connected = true
@@ -138,8 +136,8 @@ func (s *QClientSession) connectionSyncHandler() {
 		s.ctxCancel()
 	}()
 
-	s.Logger.Info().Msgf("CONN SYNC START %v", s.uuid)
-	defer s.Logger.Info().Msgf("CONN SYNC END %v", s.uuid)
+	s.Logger.Info().Msgf("CONN SYNC START %v", s.id)
+	defer s.Logger.Info().Msgf("CONN SYNC END %v", s.id)
 
 	for {
 		<-time.After(10 * time.Millisecond)
@@ -172,8 +170,8 @@ func (s *QClientSession) connectionInHandler() {
 		buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
 	}
 
-	s.Logger.Info().Msgf("CONN IN START %v", s.uuid)
-	defer s.Logger.Info().Msgf("CONN IN END %v", s.uuid)
+	s.Logger.Info().Msgf("CONN IN START %v", s.id)
+	defer s.Logger.Info().Msgf("CONN IN END %v", s.id)
 
 	for {
 		if !s.checkActivity() {
@@ -223,8 +221,10 @@ func (s *QClientSession) connectionProcessHandler() {
 		s.handlersWaiter.Done()
 	}()
 
-	s.Logger.Info().Msgf("CONN PROC START %v", s.uuid)
-	defer s.Logger.Info().Msgf("CONN PROC END %v", s.uuid)
+	s.Logger.Info().Msgf("CONN PROC START %v", s.id)
+	defer s.Logger.Info().Msgf("CONN PROC END %v", s.id)
+
+	buffer := make([]*types.Packet, 0, 32)
 
 	for {
 		if !s.checkActivity() {
@@ -236,67 +236,68 @@ func (s *QClientSession) connectionProcessHandler() {
 			return
 
 		case pkt := <-s.incomingQueue:
-			if len(s.streams) == 0 {
-				s.Logger.Debug().Msgf("[%v] No active streams", s.id)
-				break
-			}
-			s.Logger.Debug().Msgf("CONN PROC LOOP %v", s.uuid)
+			buffer = append(buffer, pkt)
+			break
 
-			s.refreshActivity()
+		case <-time.After(1 * time.Millisecond):
+			for _, pkt := range buffer {
+				if len(s.streams) == 0 {
+					s.Logger.Debug().Msgf("[%v] No active streams", s.id)
+					break
+				}
+				s.Logger.Debug().Msgf("CONN PROC LOOP %v", s.id)
 
-			s.Logger.Debug().Msgf("[%v] PROC packet %v %d(%v)", s.id, s.uuid, pkt.DataLen, pkt.Streamid)
-			if pkt == nil {
-				break
-			}
-			addr, port := pkt.Address()
-			if len(addr) == 0 || port == -1 {
-				addr, port = returnAddr.IP.String(), returnAddr.Port
-			}
+				s.refreshActivity()
 
-			var ptr_id bindings.Size_t = 0
+				s.Logger.Debug().Msgf("[%v] PROC packet %v %d(%v)", s.id, s.id, pkt.DataLen, pkt.Streamid)
+				if pkt == nil {
+					break
+				}
+				addr, port := pkt.Address()
+				if len(addr) == 0 || port == -1 {
+					addr, port = returnAddr.IP.String(), returnAddr.Port
+				}
 
-			err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), &ptr_id)
-			if err != bindings.QUICLY_OK {
-				if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
-					s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.DataLen, err)
-				} else {
-					s.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", s.id, pkt.DataLen, err)
+				err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), bindings.Size_t(s.id))
+				if err != bindings.QUICLY_OK {
+					if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
+						s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.DataLen, err)
+					} else {
+						s.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", s.id, pkt.DataLen, err)
+					}
 				}
 			}
+			buffer = buffer[:0]
 
-			s.id = uint64(ptr_id)
-			bindings.RegisterConnection(s, s.id)
-			break
-
-		case <-time.After(100 * time.Microsecond):
+			if ret := s.flushOutgoingQueue(); ret != errors.QUICLY_OK {
+				return
+			}
 			break
 		}
-
-		s.flushOutgoingQueue()
 	}
 }
 
-func (s *QClientSession) flushOutgoingQueue() {
+func (s *QClientSession) flushOutgoingQueue() int32 {
 	num_packets := bindings.Size_t(32)
 	packets_buf := make([]bindings.Iovec, 32)
 
 	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
+	if int(num_packets) == 0 {
+		return ret
+	}
 
 	switch ret {
 	case bindings.QUICLY_ERROR_NOT_OPEN:
 		s.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN", ret)
-		return
+		return ret
 	default:
 		s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
-		return
+		return ret
 	case bindings.QUICLY_OK:
-		if int(num_packets) == 0 {
-			return
-		}
 		break
 	}
 
-	s.Logger.Debug().Msgf("CONN flush (%d) %v", num_packets, s.uuid)
+	s.Logger.Debug().Msgf("CONN flush (%d) %v", num_packets, s.id)
 	for i := 0; i < int(num_packets); i++ {
 		packets_buf[i].Deref() // realize the struct copy from C -> go
 
@@ -310,6 +311,8 @@ func (s *QClientSession) flushOutgoingQueue() {
 
 	runtime.KeepAlive(num_packets)
 	runtime.KeepAlive(packets_buf)
+
+	return ret
 }
 
 // --- Session interface --- //
@@ -327,25 +330,24 @@ func (s *QClientSession) OpenStream() types.Stream {
 	}
 	s.exitCritical(false)
 
-	var ptr_id bindings.Size_t = 0
+	var streamId bindings.Size_t = 0
+	connId := bindings.Size_t(s.id)
 
-	if ret := bindings.QuiclyOpenStream(bindings.Size_t(s.id), &ptr_id); ret != errors.QUICLY_OK {
+	if ret := bindings.QuiclyOpenStream(connId, &streamId); ret != errors.QUICLY_OK {
 		s.Logger.Debug().Msgf("open stream err")
 		return nil
 	}
 
-	streamId := uint64(ptr_id)
-
 	st := &QStream{
 		session: s,
 		conn:    s.Conn,
-		id:      streamId,
+		id:      uint64(streamId),
 		Logger:  s.Logger,
 	}
 	st.init()
 
 	s.enterCritical(false)
-	s.streams[streamId] = st
+	s.streams[st.id] = st
 	s.exitCritical(false)
 
 	return st
@@ -449,7 +451,7 @@ func (s *QClientSession) Close() error {
 	}
 
 	s.enterCritical(false)
-	s.Logger.Warn().Msgf(">> Close queues %d(%v)", s.id, s.uuid)
+	s.Logger.Warn().Msgf(">> Close queues %d(%v)", s.id, s.id)
 	safeClose(s.incomingQueue)
 	safeClose(s.outgoingQueue)
 	_ = s.Conn.Close()
@@ -462,12 +464,12 @@ func (s *QClientSession) Close() error {
 	}
 	bindings.RemoveConnection(s.id)
 
-	s.Logger.Warn().Msgf(">> Wait routines %d(%v)", s.id, s.uuid)
+	s.Logger.Warn().Msgf(">> Wait routines %d(%v)", s.id, s.id)
 	s.handlersWaiter.Wait()
 
-	var ptr_id = bindings.Size_t(s.id)
-	var err = bindings.QuiclyClose(ptr_id, 0)
-	s.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", s.id, s.uuid, err)
+	var connId = bindings.Size_t(s.id)
+	var err = bindings.QuiclyClose(connId, 0)
+	s.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", s.id, s.id, err)
 
 	return nil
 }

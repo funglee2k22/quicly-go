@@ -51,6 +51,7 @@ func (q qgoAdapter) RemoteAddr() net.Addr {
 }
 
 var startPrefix = 0
+var logFile *os.File = nil
 
 func removePrefixCaller(pc uintptr, file string, line int) string {
 	if startPrefix == 0 {
@@ -63,13 +64,14 @@ func removePrefixCaller(pc uintptr, file string, line int) string {
 func init() {
 	log.CallerMarshalFunc = removePrefixCaller
 
-	logger = log.New(os.Stdout).Level(log.InfoLevel).
+	logger = log.New(os.Stdout).Level(log.DebugLevel).
 		With().Timestamp().
 		Caller().
 		Logger()
 }
 
 func main() {
+	var verboseFlag = flag.Bool("verbose", false, "Verbose output")
 	var clientFlag = flag.Bool("client", false, "Operate as client")
 	var quicgoFlag = flag.Bool("quicgo", false, "Use QuicGo lib")
 	var remoteHost = flag.String("host", "127.0.0.1", "Host address to use")
@@ -82,6 +84,22 @@ func main() {
 
 	flag.Parse()
 
+	if *clientFlag {
+		logFile, _ = os.Create("tester-client.log")
+	} else {
+		logFile, _ = os.Create("tester-server.log")
+	}
+	defer logFile.Close()
+
+	var lvl = log.InfoLevel
+	if *verboseFlag {
+		lvl = log.DebugLevel
+	}
+	logger = log.New(io.MultiWriter(os.Stdout, logFile)).Level(lvl).
+		With().Timestamp().
+		Caller().
+		Logger()
+
 	options := quicly.Options{
 		Logger:               &logger,
 		IsClient:             *clientFlag,
@@ -91,7 +109,7 @@ func main() {
 		IdleTimeoutMs:        3000,
 		CongestionAlgorithm:  *ccaFlag,
 		CCSlowstartAlgorithm: *ccaSlowFlag,
-		TraceQuicly:          true,
+		TraceQuicly:          *verboseFlag,
 	}
 
 	logger.Info().Msgf("Options: %v", options)
@@ -267,6 +285,7 @@ func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	defer logger.Info().Msgf("END: runAsServer_quicgo")
 
 	fulldata := ctx.Value("Payload").(*bytes.Buffer)
+	dumpDataToFile("server", fulldata)
 	for {
 		logger.Info().Msgf("accepting connection...")
 		conn, err := c.Accept(ctx)
@@ -283,27 +302,31 @@ func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 				logger.Info().Msgf("accepting stream...")
 				st, err := conn.AcceptStream(ctx)
 				if err != nil {
+					logger.Error().Msgf("error accepting stream: %v", err)
 					return
 				}
 
-				logger.Info().Msgf("accepted stream id: %v", st.StreamID())
+				go func() {
+					logger.Info().Msgf("accepted stream id: %v", st.StreamID())
 
-				wg := &sync.WaitGroup{}
-				wg.Add(2)
+					wg := &sync.WaitGroup{}
+					wg.Add(2)
 
-				go handleServerStream_write(wg, &qgoAdapter{
-					Stream: st,
-					locip:  ip,
-					remip:  nil,
-				}, fulldata)
-				go handleServerStream_read(wg, &qgoAdapter{
-					Stream: st,
-					locip:  ip,
-					remip:  nil,
-				})
+					go handleServerStream_write(wg, &qgoAdapter{
+						Stream: st,
+						locip:  ip,
+						remip:  nil,
+					}, bytes.NewBuffer(fulldata.Bytes()))
 
-				wg.Wait()
-				logger.Info().Msgf("terminated stream id: %v", st.StreamID())
+					go handleServerStream_read(wg, &qgoAdapter{
+						Stream: st,
+						locip:  ip,
+						remip:  nil,
+					})
+
+					wg.Wait()
+					logger.Info().Msgf("terminated stream id: %v", st.StreamID())
+				}()
 			}
 		}()
 	}
@@ -387,16 +410,18 @@ func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 				return
 			}
 
-			logger.Info().Msgf("accepted stream from %v", st)
+			go func() {
+				logger.Info().Msgf("accepted stream from %v", st)
+				defer logger.Info().Msgf("END: runAsServer_quicly connection")
 
-			wg := &sync.WaitGroup{}
-			wg.Add(2)
+				wg := &sync.WaitGroup{}
+				wg.Add(2)
 
-			go handleServerStream_read(wg, st)
-			go handleServerStream_write(wg, st, fulldata)
+				go handleServerStream_read(wg, st)
+				go handleServerStream_write(wg, st, bytes.NewBuffer(fulldata.Bytes()))
 
-			wg.Wait()
-			logger.Info().Msgf("END: runAsServer_quicly connection")
+				wg.Wait()
+			}()
 		}()
 	}
 }
@@ -417,15 +442,16 @@ func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
 
 		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
-		if err != nil {
-			if err != io.EOF {
-				logger.Err(err).Send()
-				return
-			}
-			continue
-		}
 		if n > 0 {
 			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
+		}
+		if err == nil {
+			continue
+		}
+		var netErr, ok = err.(net.Error)
+		if err != io.EOF || (ok && netErr.Temporary()) {
+			logger.Err(err).Send()
+			return
 		}
 	}
 }
@@ -446,19 +472,23 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 
 		n, err := buffer.Read(data)
 		if err != nil {
+			logger.Err(err).Send()
 			return
 		}
 
 		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err = stream.Write(data[:n])
-		if err != nil {
-			if err != io.EOF {
-				logger.Err(err).Send()
-				return
-			}
+		if n > 0 {
+			logger.Info().Msgf("Write(%d): %v", n, string(data[:n]))
+		}
+		if err == nil {
 			continue
 		}
-		logger.Info().Msgf("Write(%d): %v", n, string(data[:n]))
+		var netErr, ok = err.(net.Error)
+		if err != io.EOF || (ok && netErr.Temporary()) {
+			logger.Err(err).Send()
+			return
+		}
 	}
 }
 
@@ -487,21 +517,21 @@ func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
 	data := make([]byte, 4096)
 
 	for {
-		logger.Debug().Msgf("Read Stream")
-
 		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
+		logger.Debug().Msgf("Read(%d,%v) %v", n, err, string(data[:n]))
+		if n > 0 {
+			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
+			buf.Write(data[:n])
+			lastread = time.Now().Add(3 * time.Second)
+		}
+
 		if err != nil || n == 0 {
 			if time.Now().After(lastread) {
 				logger.Err(err).Send()
 				return
 			}
 			continue
-		}
-		lastread = time.Now().Add(3 * time.Second)
-		if n > 0 {
-			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
-			buf.Write(data[:n])
 		}
 	}
 }
@@ -523,7 +553,7 @@ func handleClientStream_write(wg *sync.WaitGroup, stream net.Conn) {
 		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Write(scan.Bytes())
 		if err != nil {
-			if err != io.EOF {
+			if err != io.EOF && !err.(net.Error).Timeout() {
 				logger.Err(err).Send()
 				return
 			}

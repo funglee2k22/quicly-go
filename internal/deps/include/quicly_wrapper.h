@@ -39,9 +39,9 @@ extern int   QuiclyInitializeEngine(
 
 extern int   QuiclyCloseEngine();
 
-extern int   QuiclyProcessMsg( int is_client, const char* address, int port, char* msg, size_t dgram_len, size_t* id );
+extern int   QuiclyProcessMsg( int is_client, const char* address, int port, char* msg, size_t dgram_len, size_t conn_id );
 
-extern int   QuiclyConnect( const char* address, int port, size_t* id );
+extern int   QuiclyConnect( const char* address, int port, size_t conn_id );
 
 extern int   QuiclyOpenStream( size_t conn_id, size_t* stream_id );
 

@@ -17,23 +17,23 @@ package bindings
 import "C"
 
 const (
-	// QUICLY_ERROR_PACKET_IGNORED as defined in quicly/constants.h:102
+	// QUICLY_ERROR_PACKET_IGNORED as defined in quicly/constants.h:104
 	QUICLY_ERROR_PACKET_IGNORED = 0xff01
-	// QUICLY_ERROR_SENDBUF_FULL as defined in quicly/constants.h:103
+	// QUICLY_ERROR_SENDBUF_FULL as defined in quicly/constants.h:105
 	QUICLY_ERROR_SENDBUF_FULL = 0xff02
-	// QUICLY_ERROR_FREE_CONNECTION as defined in quicly/constants.h:104
+	// QUICLY_ERROR_FREE_CONNECTION as defined in quicly/constants.h:106
 	QUICLY_ERROR_FREE_CONNECTION = 0xff03
-	// QUICLY_ERROR_RECEIVED_STATELESS_RESET as defined in quicly/constants.h:105
+	// QUICLY_ERROR_RECEIVED_STATELESS_RESET as defined in quicly/constants.h:107
 	QUICLY_ERROR_RECEIVED_STATELESS_RESET = 0xff04
-	// QUICLY_ERROR_NO_COMPATIBLE_VERSION as defined in quicly/constants.h:106
+	// QUICLY_ERROR_NO_COMPATIBLE_VERSION as defined in quicly/constants.h:108
 	QUICLY_ERROR_NO_COMPATIBLE_VERSION = 0xff05
-	// QUICLY_ERROR_IS_CLOSING as defined in quicly/constants.h:107
+	// QUICLY_ERROR_IS_CLOSING as defined in quicly/constants.h:109
 	QUICLY_ERROR_IS_CLOSING = 0xff06
-	// QUICLY_ERROR_STATE_EXHAUSTION as defined in quicly/constants.h:108
+	// QUICLY_ERROR_STATE_EXHAUSTION as defined in quicly/constants.h:110
 	QUICLY_ERROR_STATE_EXHAUSTION = 0xff07
-	// QUICLY_ERROR_INVALID_INITIAL_VERSION as defined in quicly/constants.h:109
+	// QUICLY_ERROR_INVALID_INITIAL_VERSION as defined in quicly/constants.h:111
 	QUICLY_ERROR_INVALID_INITIAL_VERSION = 0xff08
-	// QUICLY_ERROR_DECRYPTION_FAILED as defined in quicly/constants.h:110
+	// QUICLY_ERROR_DECRYPTION_FAILED as defined in quicly/constants.h:112
 	QUICLY_ERROR_DECRYPTION_FAILED = 0xff09
 )
 

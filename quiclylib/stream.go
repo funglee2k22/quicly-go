@@ -67,7 +67,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	s.init()
 
 	if s.IsClosed() {
-		s.Logger.Info().Msgf("[%d] QSTREAM CLOSED", s.id)
+		s.Logger.Debug().Msgf("[%d] QSTREAM CLOSED", s.id)
 		return 0, io.ErrClosedPipe
 	}
 
@@ -85,7 +85,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 		wr, _ := s.streamInBuf.Read(b[total:])
 		total += wr
 		s.totalRead += uint64(wr)
-		s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 1: %d / %d", s.id, wr, cap(b))
+		s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 1: %d / %d / %d", s.id, total, wr, cap(b))
 		if total >= cap(b) {
 			s.inBufferLock.Unlock()
 			return total, nil
@@ -101,7 +101,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 			s.inBufferLock.Unlock()
 			total += wr
 			s.totalRead += uint64(wr)
-			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 2: %d / %d", s.id, wr, cap(b))
+			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 2: %d / %d / %d", s.id, total, wr, cap(b))
 			if total == cap(b) {
 				return total, nil
 			}
@@ -113,7 +113,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 			s.inBufferLock.Unlock()
 			total += wr
 			s.totalRead += uint64(wr)
-			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 3: %d / %d", s.id, wr, cap(b))
+			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 3: %d / %d / %d", s.id, wr, total, cap(b))
 			return total, timeoutError
 		}
 	}
