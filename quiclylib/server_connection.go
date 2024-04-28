@@ -298,10 +298,17 @@ func (r *QServerConnection) connectionOutgoing() {
 			return
 		}
 
-		ret := r.flushOutgoingQueue()
-		r.Logger.Debug().Msgf("CONN OUT ERR %v", ret)
+		select {
+		case <-r.Ctx.Done():
+			return
+		default:
+			break
+		}
 
+		ret := r.flushOutgoingQueue()
 		switch ret {
+		default:
+			continue
 		case bindings.QUICLY_ERROR_NOT_OPEN:
 			fallthrough
 		case bindings.QUICLY_ERROR_DESTINATION_NOT_FOUND:
@@ -309,19 +316,9 @@ func (r *QServerConnection) connectionOutgoing() {
 			return
 		case bindings.QUICLY_OK:
 			break
-		default:
-			continue
 		}
 
 		r.refreshActivity()
-
-		select {
-		case <-r.Ctx.Done():
-			return
-
-		default:
-			break
-		}
 	}
 }
 
