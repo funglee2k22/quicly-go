@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/Project-Faster/quic-go"
 	"github.com/Project-Faster/quicly-go"
+	"github.com/Project-Faster/quicly-go/quiclylib"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
@@ -427,21 +428,24 @@ func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 }
 
 func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
+	total := 0
+	startTime := time.Now()
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error().Msgf("err: %v", err)
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleServerStream_read")
+		logger.Info().Msgf("END: handleServerStream_read (%d)(%v)", total, time.Since(startTime))
 	}()
 
-	data := make([]byte, 4096)
+	data := make([]byte, quiclylib.READ_SIZE)
 	for {
 		logger.Debug().Msgf("Read Stream")
 
 		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
+		total += n
 		if n > 0 {
 			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
 		}
@@ -457,16 +461,18 @@ func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
 }
 
 func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes.Buffer) {
+	total := 0
+	startTime := time.Now()
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error().Msgf("err: %v", err)
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleServerStream_write")
+		logger.Info().Msgf("END: handleServerStream_write (%d)(%v)", total, time.Since(startTime))
 	}()
 
-	data := make([]byte, 4096)
+	data := make([]byte, buffer.Len())
 	for {
 		logger.Debug().Msgf("Write Stream")
 
@@ -478,6 +484,7 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 
 		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err = stream.Write(data[:n])
+		total += n
 		if n > 0 {
 			logger.Info().Msgf("Write(%d): %v", n, string(data[:n]))
 		}
@@ -502,24 +509,27 @@ func dumpDataToFile(prefix string, buf *bytes.Buffer) {
 }
 
 func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
-	buf := bytes.NewBuffer(make([]byte, 0, 4096))
+	buf := bytes.NewBuffer(make([]byte, 0, quiclylib.READ_SIZE))
+	total := 0
+	startTime := time.Now()
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error().Msgf("err: %v", err)
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleClientStream_read")
+		logger.Info().Msgf("END: handleClientStream_read (%d)(%v)", total, time.Since(startTime))
 	}()
 	defer dumpDataToFile("client", buf)
 
 	var lastread = time.Now().Add(3 * time.Second)
-	data := make([]byte, 4096)
+	data := make([]byte, quiclylib.READ_SIZE)
 
 	for {
 		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
 		logger.Debug().Msgf("Read(%d,%v) %v", n, err, string(data[:n]))
+		total += n
 		if n > 0 {
 			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
 			buf.Write(data[:n])
@@ -537,13 +547,15 @@ func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
 }
 
 func handleClientStream_write(wg *sync.WaitGroup, stream net.Conn) {
+	total := 0
+	startTime := time.Now()
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error().Msgf("err: %v", err)
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleClientStream_write")
+		logger.Info().Msgf("END: handleClientStream_write (%d)(%v)", total, time.Since(startTime))
 	}()
 
 	scan := bufio.NewScanner(os.Stdin)
@@ -552,6 +564,7 @@ func handleClientStream_write(wg *sync.WaitGroup, stream net.Conn) {
 
 		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Write(scan.Bytes())
+		total += n
 		if err != nil {
 			if err != io.EOF && !err.(net.Error).Timeout() {
 				logger.Err(err).Send()

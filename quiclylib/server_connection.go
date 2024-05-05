@@ -40,7 +40,6 @@ type QServerConnection struct {
 	routinesWaiter sync.WaitGroup
 
 	incomingQueue chan *types.Packet
-	outgoingQueue chan *types.Packet
 }
 
 const (
@@ -95,7 +94,6 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	r.streamAcceptQueue = make(chan types.Stream, 256)
 
 	r.incomingQueue = make(chan *types.Packet, 4192)
-	r.outgoingQueue = make(chan *types.Packet, 4192)
 
 	r.routinesWaiter.Add(3)
 
@@ -431,7 +429,6 @@ func (r *QServerConnection) Close() error {
 		}(stream)
 	}
 	safeClose(r.incomingQueue)
-	safeClose(r.outgoingQueue)
 	safeClose(r.streamAcceptQueue)
 
 	r.exitCritical(false)

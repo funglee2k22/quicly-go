@@ -38,7 +38,6 @@ type QClientSession struct {
 	firstStreamOpen    bool
 	waitStreamOpenLock sync.RWMutex
 
-	outgoingQueue chan *types.Packet
 	incomingQueue chan *types.Packet
 }
 
@@ -72,7 +71,6 @@ func (s *QClientSession) init() {
 		s.Logger.Info().Msgf("Client handler init: %v", s.id)
 
 		s.incomingQueue = make(chan *types.Packet, 1024)
-		s.outgoingQueue = make(chan *types.Packet, 1024)
 		s.streams = make(map[uint64]types.Stream)
 		s.lastActivity = time.Now()
 	} else {
@@ -453,7 +451,6 @@ func (s *QClientSession) Close() error {
 	s.enterCritical(false)
 	s.Logger.Warn().Msgf(">> Close queues %d(%v)", s.id, s.id)
 	safeClose(s.incomingQueue)
-	safeClose(s.outgoingQueue)
 	_ = s.Conn.Close()
 	s.exitCritical(false)
 

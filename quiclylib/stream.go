@@ -46,6 +46,8 @@ func (s *QStream) init() {
 		s.streamOutBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.bufferUpdateCh = make(chan struct{}, 512)
 		s.closed.Store(false)
+
+		go s.flushToStream()
 	}
 }
 
@@ -63,7 +65,7 @@ func (s *QStream) IsClosed() bool {
 
 var zeroTime = time.Time{}
 
-func (s *QStream) Read(b []byte) (n int, err error) {
+func (s *QStream) Read(buffRd []byte) (n int, err error) {
 	s.init()
 
 	if s.IsClosed() {
@@ -82,11 +84,11 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 
 	s.inBufferLock.Lock()
 	if s.streamInBuf.Len() > 0 {
-		wr, _ := s.streamInBuf.Read(b[total:])
+		wr, _ := s.streamInBuf.Read(buffRd[total:])
 		total += wr
 		s.totalRead += uint64(wr)
-		s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 1: %d / %d / %d", s.id, total, wr, cap(b))
-		if total >= cap(b) {
+		s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 1: %d / %d / %d", s.id, total, wr, cap(buffRd))
+		if total >= cap(buffRd) {
 			s.inBufferLock.Unlock()
 			return total, nil
 		}
@@ -97,23 +99,23 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 		select {
 		case <-s.bufferUpdateCh:
 			s.inBufferLock.Lock()
-			wr, _ := s.streamInBuf.Read(b[total:])
+			wr, _ := s.streamInBuf.Read(buffRd[total:])
 			s.inBufferLock.Unlock()
 			total += wr
 			s.totalRead += uint64(wr)
-			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 2: %d / %d / %d", s.id, total, wr, cap(b))
-			if total == cap(b) {
+			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 2: %d / %d / %d", s.id, total, wr, cap(buffRd))
+			if total == cap(buffRd) {
 				return total, nil
 			}
 			continue
 
 		case <-time.After(time.Until(s.readDeadline)):
 			s.inBufferLock.Lock()
-			wr, _ := s.streamInBuf.Read(b[total:])
+			wr, _ := s.streamInBuf.Read(buffRd[total:])
 			s.inBufferLock.Unlock()
 			total += wr
 			s.totalRead += uint64(wr)
-			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 3: %d / %d / %d", s.id, wr, total, cap(b))
+			s.Logger.Debug().Msgf("QSTREAM READ %d BUFF READ 3: %d / %d / %d", s.id, wr, total, cap(buffRd))
 			return total, timeoutError
 		}
 	}
@@ -121,7 +123,7 @@ func (s *QStream) Read(b []byte) (n int, err error) {
 	return 0, io.ErrClosedPipe
 }
 
-func (s *QStream) Write(b []byte) (n int, err error) {
+func (s *QStream) Write(buffWr []byte) (n int, err error) {
 	s.init()
 
 	if s.IsClosed() {
@@ -133,22 +135,38 @@ func (s *QStream) Write(b []byte) (n int, err error) {
 		s.totalWrite += uint64(n)
 	}()
 
-	s.Logger.Debug().Msgf("[%v] SEND packet %d bytes [%v]", s.id, len(b), s.ID())
+	s.Logger.Debug().Msgf("[%v] SEND packet %d bytes [%v]", s.id, len(buffWr), s.ID())
 	defer s.Logger.Debug().Msgf("[%d] QSTREAM OUT", s.id)
 
-	s.writtenBytes += uint64(len(b))
+	s.outBufferLock.Lock()
+	n, _ = s.streamOutBuf.Write(buffWr)
+	s.writtenBytes += uint64(n)
+	s.outBufferLock.Unlock()
 
-	errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), b, bindings.Size_t(len(b)))
-	if errcode != errors.QUICLY_OK {
-		s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
-		return 0, io.ErrShortWrite
+	return n, nil
+}
+
+func (s *QStream) flushToStream() {
+	for !s.IsClosed() {
+		<-time.After(100 * time.Millisecond)
+
+		s.outBufferLock.Lock()
+		waitSize := s.streamOutBuf.Len()
+		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
+			s.streamOutBuf.Bytes(), bindings.Size_t(waitSize))
+
+		s.streamOutBuf.Reset()
+		s.outBufferLock.Unlock()
+
+		if errcode != errors.QUICLY_OK {
+			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
+			continue
+		}
+
+		if err := s.waitSentBytes(uint64(waitSize)); err != nil {
+			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
+		}
 	}
-
-	if err := s.waitSentBytes(uint64(len(b))); err != nil {
-		return 0, err
-	}
-
-	return len(b), nil
 }
 
 func (s *QStream) Close() error {
