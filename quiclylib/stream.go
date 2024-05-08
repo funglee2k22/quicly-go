@@ -22,10 +22,12 @@ type QStream struct {
 	closed atomic.Value
 
 	bufferUpdateCh chan struct{}
-	inBufferLock   sync.Mutex
-	streamInBuf    *bytes.Buffer
-	outBufferLock  sync.Mutex
-	streamOutBuf   *bytes.Buffer
+	sentBytesCh    chan uint64
+
+	inBufferLock  sync.Mutex
+	streamInBuf   *bytes.Buffer
+	outBufferLock sync.Mutex
+	streamOutBuf  *bytes.Buffer
 
 	readDeadline  time.Time
 	writeDeadline time.Time
@@ -45,6 +47,7 @@ func (s *QStream) init() {
 		s.streamInBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.streamOutBuf = bytes.NewBuffer(make([]byte, 0, READ_SIZE))
 		s.bufferUpdateCh = make(chan struct{}, 512)
+		s.sentBytesCh = make(chan uint64, 512)
 		s.closed.Store(false)
 
 		go s.flushToStream()
@@ -139,33 +142,38 @@ func (s *QStream) Write(buffWr []byte) (n int, err error) {
 	defer s.Logger.Debug().Msgf("[%d] QSTREAM OUT", s.id)
 
 	s.outBufferLock.Lock()
-	n, _ = s.streamOutBuf.Write(buffWr)
+	_, _ = s.streamOutBuf.Write(buffWr)
 	s.writtenBytes += uint64(n)
 	s.outBufferLock.Unlock()
 
-	return n, nil
+	return int(<-s.sentBytesCh), nil
 }
 
 func (s *QStream) flushToStream() {
 	for !s.IsClosed() {
-		<-time.After(100 * time.Millisecond)
+		<-time.After(200 * time.Millisecond)
 
 		s.outBufferLock.Lock()
-		waitSize := s.streamOutBuf.Len()
-		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
-			s.streamOutBuf.Bytes(), bindings.Size_t(waitSize))
-
+		data := append([]byte{}, s.streamOutBuf.Bytes()...)
+		waitSize := len(data)
 		s.streamOutBuf.Reset()
 		s.outBufferLock.Unlock()
+
+		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
+			data, bindings.Size_t(waitSize))
+
+		s.Logger.Debug().Msgf("%v quicly write flush: %d", s.session.ID(), waitSize)
 
 		if errcode != errors.QUICLY_OK {
 			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
 			continue
 		}
 
-		if err := s.waitSentBytes(uint64(waitSize)); err != nil {
+		sent, err := s.waitSentBytes(uint64(waitSize))
+		if err != nil {
 			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
 		}
+		s.sentBytesCh <- sent
 	}
 }
 
@@ -256,23 +264,25 @@ func (s *QStream) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func (s *QStream) waitSentBytes(size uint64) error {
+func (s *QStream) waitSentBytes(size uint64) (uint64, error) {
 	begin := s.sentBytes
 
+	maxCounter := 10
 	s.Logger.Debug().Msgf("[%v] SEND START sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
-	for s.sentBytes < begin+size {
+	for maxCounter > 0 && s.sentBytes < begin+size {
 
 		s.Logger.Debug().Msgf("[%v] SEND STEP sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 		if s.IsClosed() {
 			s.Logger.Debug().Msgf("[%d] QSTREAM OUT CLOSE", s.id)
-			return io.ErrClosedPipe
+			return s.sentBytes - begin, io.ErrClosedPipe
 		}
 
 		<-time.After(1 * time.Millisecond)
+		maxCounter--
 	}
 
 	s.Logger.Debug().Msgf("[%v] SEND END sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
-	return nil
+	return s.sentBytes - begin, nil
 }
 
 func (s *QStream) Sync() bool {
