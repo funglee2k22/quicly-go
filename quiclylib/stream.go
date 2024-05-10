@@ -267,9 +267,8 @@ func (s *QStream) SetWriteDeadline(t time.Time) error {
 func (s *QStream) waitSentBytes(size uint64) (uint64, error) {
 	begin := s.sentBytes
 
-	maxCounter := 200
 	s.Logger.Debug().Msgf("[%v] SEND START sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
-	for maxCounter > 0 && s.sentBytes < begin+size {
+	for s.sentBytes < begin+size {
 
 		s.Logger.Debug().Msgf("[%v] SEND STEP sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 		if s.IsClosed() {
@@ -278,7 +277,6 @@ func (s *QStream) waitSentBytes(size uint64) (uint64, error) {
 		}
 
 		<-time.After(1 * time.Millisecond)
-		maxCounter--
 	}
 
 	s.Logger.Debug().Msgf("[%v] SEND END sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
