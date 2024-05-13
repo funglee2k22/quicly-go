@@ -112,7 +112,7 @@ static quicly_stream_scheduler_t quicly_quiclygo_stream_scheduler = {quiclygo_st
 
 const quicly_context_t quiclygo_context = {NULL,                                                 /* tls */
                                               1280,          /* client_initial_size */
-                                              { 64, 500, 200, 1 },                                /* loss */
+                                              { (1024 / 8), 500, 200, 2 },                                /* loss */
                                               {{30 * 1024 * 1472, 30 * 1024 * 1472, 30 * 1024 * 1472}, /* max_stream_data */
                                                10 * 1024 * 1472,                                    /* max_data */
                                                60 * 1000,                                           /* idle_timeout (30 seconds) */
@@ -121,10 +121,10 @@ const quicly_context_t quiclygo_context = {NULL,                                
                                                65527 }, // DEFAULT_MAX_UDP_PAYLOAD_SIZE},
                                               16777216, //DEFAULT_MAX_PACKETS_PER_KEY,
                                               65535, // DEFAULT_MAX_CRYPTO_BYTES,
-                                              10, // DEFAULT_INITCWND_PACKETS,
-                                              QUIC_VERSION, // QUICLY_PROTOCOL_VERSION_1,
-                                              3, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
-                                              64, /* ack_frequency */
+                                              1028, // DEFAULT_INITCWND_PACKETS,
+                                              QUIC_VERSION, // protocol version 29,
+                                              4096, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
+                                              0, /* ack_frequency */
                                               400, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
                                               10, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
                                               1280 * 1000, // default_jumpstart_cwnd_packets
@@ -725,7 +725,7 @@ std::lock_guard<std::mutex> lock(global_lock);
     return err;
 }
 
-static uint8_t dgrams_buf[128 * 65536];
+static uint8_t dgrams_buf[4096 * 1470];
 
 int QuiclyOutgoingMsgQueue( size_t conn_id, struct iovec* dgrams_out, size_t* num_dgrams )
 {
@@ -741,8 +741,8 @@ std::lock_guard<std::mutex> lock(global_lock);
 
     quicly_get_first_timeout(econn);
 
-    int ret = quicly_send(econn, &dest, &src, dgrams_out, num_dgrams, dgrams_buf, 128 * 65536);
-    TRACE("\n\n>> SEND: %d %d\n", ret, *num_dgrams);
+    int ret = quicly_send(econn, &dest, &src, dgrams_out, num_dgrams, dgrams_buf, 4096 * 1470);
+    TRACE("\n\n>> quicly_send: %d %d\n", ret, *num_dgrams);
 
     switch (ret) {
     case 0:

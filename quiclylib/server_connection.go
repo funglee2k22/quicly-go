@@ -25,11 +25,11 @@ type QServerConnection struct {
 	// unexported fields
 	id         uint64
 	started    bool
+	closing    bool
 	session    *QServerSession
 	returnAddr *net.UDPAddr
 	returnHash uint64
 
-	lastActivity  time.Time
 	exclusiveLock sync.RWMutex
 
 	streams           map[uint64]types.Stream
@@ -81,6 +81,7 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	}
 
 	r.started = true
+	r.closing = false
 
 	r.session = session
 	r.Ctx, r.cancelFunc = context.WithCancel(context.Background())
@@ -88,35 +89,21 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	r.Logger = session.Logger
 	r.returnAddr = addr
 	r.returnHash = addrHash
-	r.lastActivity = time.Now()
 
 	r.streams = make(map[uint64]types.Stream)
 	r.streamAcceptQueue = make(chan types.Stream, 256)
 
 	r.incomingQueue = make(chan *types.Packet, 4192)
 
-	r.routinesWaiter.Add(3)
+	r.routinesWaiter.Add(2)
 
 	go r.connectionProcess()
 	go r.connectionOutgoing()
-	go r.connectionSyncHandler()
 
 	go func() {
 		r.routinesWaiter.Wait()
 		r.Close()
 	}()
-}
-
-func (r *QServerConnection) refreshActivity() {
-	r.lastActivity = time.Now()
-}
-
-func (r *QServerConnection) checkActivity() bool {
-	if time.Now().Sub(r.lastActivity).Seconds() >= 30 {
-		r.Logger.Error().Msgf("QServerConnection Activity fail: %v", time.Now().Sub(r.lastActivity))
-		return false
-	}
-	return true
 }
 
 func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
@@ -142,8 +129,8 @@ func (r *QServerConnection) handleProcessPacket(pkt *types.Packet) int32 {
 }
 
 func (r *QServerConnection) flushOutgoingQueue() int32 {
-	num_packets := bindings.Size_t(32)
-	packets_buf := make([]bindings.Iovec, 32)
+	num_packets := bindings.Size_t(4096)
+	packets_buf := make([]bindings.Iovec, 4096)
 
 	connId := bindings.Size_t(r.id)
 
@@ -162,6 +149,7 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 		break
 	}
 
+	r.Logger.Debug().Msgf("CONN flush (%d) %v", num_packets, r.id)
 	for i := 0; i < int(num_packets); i++ {
 		packets_buf[i].Deref() // realize the struct copy from C -> go
 
@@ -171,8 +159,6 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 
 		n, err := r.NetConn.WriteToUDP(data, r.returnAddr)
 		r.Logger.Debug().Msgf("[%v] WRITE packet %d bytes [%v]", r.id, n, err)
-
-		r.refreshActivity()
 	}
 
 	runtime.KeepAlive(num_packets)
@@ -182,33 +168,6 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 }
 
 // --- Handlers routines --- //
-
-func (r *QServerConnection) connectionSyncHandler() {
-	defer func() {
-		_ = recover()
-		r.routinesWaiter.Done()
-		r.cancelFunc()
-	}()
-
-	r.Logger.Info().Msgf("CONN SYNC START %v", r.id)
-	defer r.Logger.Info().Msgf("CONN SYNC END %v", r.id)
-
-	for {
-		select {
-		case <-r.Ctx.Done():
-			return
-		default:
-			r.streamsLock.RLock()
-			for _, stream := range r.streams {
-				if !stream.Sync() {
-					r.refreshActivity()
-				}
-			}
-			r.streamsLock.RUnlock()
-			break
-		}
-	}
-}
 
 func (r *QServerConnection) connectionProcess() {
 	defer func() {
@@ -227,10 +186,6 @@ func (r *QServerConnection) connectionProcess() {
 	buffer := make([]*types.Packet, 0, 32)
 
 	for {
-		if !r.checkActivity() {
-			return
-		}
-
 		select {
 		case <-r.Ctx.Done():
 			return
@@ -239,15 +194,13 @@ func (r *QServerConnection) connectionProcess() {
 			buffer = append(buffer, pkt)
 			break
 
-		case <-time.After(1 * time.Millisecond):
+		case <-time.After(5 * time.Millisecond):
 			for _, pkt := range buffer {
 				if pkt == nil {
 					r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
 					break
 				}
 				r.Logger.Debug().Msgf("CONN PROC %v", pkt.DataLen)
-
-				r.refreshActivity()
 
 				ret := r.handleProcessPacket(pkt)
 				switch ret {
@@ -292,9 +245,6 @@ func (r *QServerConnection) connectionOutgoing() {
 
 	for {
 		<-time.After(1 * time.Millisecond)
-		if !r.checkActivity() {
-			return
-		}
 
 		select {
 		case <-r.Ctx.Done():
@@ -315,8 +265,6 @@ func (r *QServerConnection) connectionOutgoing() {
 		case bindings.QUICLY_OK:
 			break
 		}
-
-		r.refreshActivity()
 	}
 }
 
@@ -409,43 +357,57 @@ func (r *QServerConnection) Accept() (types.Stream, error) {
 
 func (r *QServerConnection) Close() error {
 	r.enterCritical(false)
-	if !r.started {
+	if !r.started || r.closing {
 		r.exitCritical(false)
 		return nil
 	}
-	r.started = false
+	r.closing = true
 
 	r.Logger.Info().Msgf("== Connections %v WaitEnd ==\"", r.id)
-	defer r.Logger.Info().Msgf("== Connections %v End ==\"", r.id)
 
 	r.cancelFunc()
 
+	wg := &sync.WaitGroup{}
+	wg.Add(len(r.streams))
+
 	for _, stream := range r.streams {
 		go func(st types.Stream) {
+			defer wg.Done()
+
 			r.Logger.Warn().Msgf(">> Trying to close stream %d:%d", r.id, st.ID())
 			st.Sync()
 			err := st.Close()
 			r.Logger.Warn().Msgf(">> Closed stream %d:%d (%v)", r.id, st.ID(), err)
 		}(stream)
 	}
-	safeClose(r.incomingQueue)
-	safeClose(r.streamAcceptQueue)
 
-	r.exitCritical(false)
+	go func() {
+		defer func() {
+			r.closing = false
+			r.started = false
+			r.Logger.Info().Msgf("== Connections %v End ==\"", r.id)
+		}()
+		wg.Wait()
 
-	r.routinesWaiter.Wait()
+		safeClose(r.incomingQueue)
+		safeClose(r.streamAcceptQueue)
 
-	r.session.connectionDelete(r.id)
+		r.exitCritical(false)
 
-	var ptrId = bindings.Size_t(r.id)
-	var err = bindings.QuiclyClose(ptrId, 0)
-	r.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", r.id, r.id, err)
+		r.routinesWaiter.Wait()
+
+		r.session.connectionDelete(r.id)
+
+		var ptrId = bindings.Size_t(r.id)
+		var err = bindings.QuiclyClose(ptrId, 0)
+		r.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", r.id, r.id, err)
+	}()
 
 	return nil
 }
 
-func (s *QServerConnection) IsClosed() bool {
-	return !s.started
+func (r *QServerConnection) IsClosed() bool {
+	return !r.started
 }
 
 func (r *QServerConnection) Addr() net.Addr {

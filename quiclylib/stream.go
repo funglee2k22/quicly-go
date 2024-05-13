@@ -142,39 +142,50 @@ func (s *QStream) Write(buffWr []byte) (n int, err error) {
 	defer s.Logger.Debug().Msgf("[%d] QSTREAM OUT", s.id)
 
 	s.outBufferLock.Lock()
-	_, _ = s.streamOutBuf.Write(buffWr)
+	n, _ = s.streamOutBuf.Write(buffWr)
 	s.writtenBytes += uint64(n)
 	s.outBufferLock.Unlock()
 
-	return int(<-s.sentBytesCh), nil
+	select {
+	case sent := <-s.sentBytesCh:
+		return int(sent), nil
+	case <-time.After(time.Now().Sub(s.writeDeadline)):
+		break
+	}
+
+	return n, nil
 }
 
 func (s *QStream) flushToStream() {
 	for !s.IsClosed() {
-		<-time.After(200 * time.Millisecond)
+		<-time.After(100 * time.Millisecond)
 
-		s.outBufferLock.Lock()
-		data := append([]byte{}, s.streamOutBuf.Bytes()...)
-		waitSize := len(data)
-		s.streamOutBuf.Reset()
-		s.outBufferLock.Unlock()
-
-		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
-			data, bindings.Size_t(waitSize))
-
-		s.Logger.Debug().Msgf("%v quicly write flush: %d", s.session.ID(), waitSize)
-
-		if errcode != errors.QUICLY_OK {
-			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
+		if s.streamOutBuf.Len() == 0 {
+			s.Logger.Debug().Msgf("[%v] SEND sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 			continue
 		}
 
-		sent, err := s.waitSentBytes(uint64(waitSize))
-		if err != nil {
+		s.Logger.Info().Msgf("%v quicly write lock", s.session.ID())
+		s.outBufferLock.Lock()
+		data := make([]byte, 1024*1024)
+		buffSize, _ := s.streamOutBuf.Read(data)
+		s.outBufferLock.Unlock()
+
+		s.Logger.Info().Msgf("%v quicly write flush: %d", s.session.ID(), buffSize)
+		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
+			data[:buffSize], bindings.Size_t(buffSize))
+		s.Logger.Info().Msgf("%v quicly write flush done", s.session.ID())
+
+		if errcode != errors.QUICLY_OK {
 			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
 		}
+
+		sent, _ := s.waitSentBytes()
+
 		s.sentBytesCh <- sent
+		s.Logger.Info().Msgf("%v quicly flush done", s.session.ID())
 	}
+	s.Logger.Info().Msgf("%v quicly flush end", s.session.ID())
 }
 
 func (s *QStream) Close() error {
@@ -264,27 +275,28 @@ func (s *QStream) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func (s *QStream) waitSentBytes(size uint64) (uint64, error) {
+func (s *QStream) waitSentBytes() (uint64, error) {
 	begin := s.sentBytes
 
 	s.Logger.Debug().Msgf("[%v] SEND START sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
-	for s.sentBytes < begin+size {
+	defer s.Logger.Info().Msgf("[%v] SEND END sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 
-		s.Logger.Debug().Msgf("[%v] SEND STEP sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
+	for s.writtenBytes > 0 && s.sentBytes > s.writtenBytes {
+		//s.Logger.Debug().Msgf("[%v] SEND STEP sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 		if s.IsClosed() {
 			s.Logger.Debug().Msgf("[%d] QSTREAM OUT CLOSE", s.id)
 			return s.sentBytes - begin, io.ErrClosedPipe
 		}
-
-		<-time.After(1 * time.Millisecond)
 	}
-
-	s.Logger.Debug().Msgf("[%v] SEND END sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 	return s.sentBytes - begin, nil
 }
 
 func (s *QStream) Sync() bool {
-	return s.writtenBytes > 0 && (s.writtenBytes <= s.ackedBytes)
+	for !s.IsClosed() && s.writtenBytes > 0 && s.sentBytes < s.writtenBytes {
+		//s.Logger.Info().Msgf("[%v] SEND STEP sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
+		<-time.After(10 * time.Millisecond)
+	}
+	return true
 }
 
 var _ net.Conn = &QStream{}

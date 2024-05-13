@@ -26,13 +26,13 @@ type QClientSession struct {
 	// unexported fields
 	id             uint64
 	connected      bool
+	closing        bool
 	ctxCancel      context.CancelFunc
 	handlersWaiter sync.WaitGroup
 
 	streams     map[uint64]types.Stream
 	streamsLock sync.RWMutex
 
-	lastActivity  time.Time
 	exclusiveLock sync.RWMutex
 
 	firstStreamOpen    bool
@@ -72,7 +72,6 @@ func (s *QClientSession) init() {
 
 		s.incomingQueue = make(chan *types.Packet, 1024)
 		s.streams = make(map[uint64]types.Stream)
-		s.lastActivity = time.Now()
 	} else {
 		s.Logger.Warn().Msgf("Client handler was already init: %v", s.id)
 	}
@@ -96,11 +95,11 @@ func (s *QClientSession) connect() int {
 	bindings.RegisterConnection(s, s.id)
 
 	s.connected = true
+	s.closing = false
 
-	s.handlersWaiter.Add(3)
+	s.handlersWaiter.Add(2)
 	go s.connectionInHandler()
 	go s.connectionProcessHandler()
-	go s.connectionSyncHandler()
 
 	go func() {
 		s.handlersWaiter.Wait()
@@ -114,47 +113,7 @@ func (s *QClientSession) connect() int {
 	return errors.QUICLY_OK
 }
 
-func (s *QClientSession) refreshActivity() {
-	s.lastActivity = time.Now()
-}
-
-func (s *QClientSession) checkActivity() bool {
-	if time.Now().Sub(s.lastActivity).Seconds() >= 30 {
-		return false
-	}
-	return true
-}
-
 // --- Handlers routines --- //
-
-func (s *QClientSession) connectionSyncHandler() {
-	defer func() {
-		_ = recover()
-		s.handlersWaiter.Done()
-		s.ctxCancel()
-	}()
-
-	s.Logger.Info().Msgf("CONN SYNC START %v", s.id)
-	defer s.Logger.Info().Msgf("CONN SYNC END %v", s.id)
-
-	for {
-		<-time.After(10 * time.Millisecond)
-
-		select {
-		case <-s.Ctx.Done():
-			return
-		default:
-			s.streamsLock.RLock()
-			for _, stream := range s.streams {
-				if !stream.Sync() {
-					s.refreshActivity()
-				}
-			}
-			s.streamsLock.RUnlock()
-			break
-		}
-	}
-}
 
 func (s *QClientSession) connectionInHandler() {
 	defer func() {
@@ -172,10 +131,6 @@ func (s *QClientSession) connectionInHandler() {
 	defer s.Logger.Info().Msgf("CONN IN END %v", s.id)
 
 	for {
-		if !s.checkActivity() {
-			return
-		}
-
 		select {
 		case <-s.Ctx.Done():
 			return
@@ -191,8 +146,6 @@ func (s *QClientSession) connectionInHandler() {
 			s.Logger.Debug().Msgf("QUICLY No packet")
 			continue
 		}
-
-		s.refreshActivity()
 
 		buf := buffList[0]
 		buffList = buffList[1:]
@@ -225,10 +178,6 @@ func (s *QClientSession) connectionProcessHandler() {
 	buffer := make([]*types.Packet, 0, 32)
 
 	for {
-		if !s.checkActivity() {
-			return
-		}
-
 		select {
 		case <-s.Ctx.Done():
 			return
@@ -243,9 +192,6 @@ func (s *QClientSession) connectionProcessHandler() {
 					s.Logger.Debug().Msgf("[%v] No active streams", s.id)
 					break
 				}
-				s.Logger.Debug().Msgf("CONN PROC LOOP %v", s.id)
-
-				s.refreshActivity()
 
 				s.Logger.Debug().Msgf("[%v] PROC packet %v %d(%v)", s.id, s.id, pkt.DataLen, pkt.Streamid)
 				if pkt == nil {
@@ -276,8 +222,8 @@ func (s *QClientSession) connectionProcessHandler() {
 }
 
 func (s *QClientSession) flushOutgoingQueue() int32 {
-	num_packets := bindings.Size_t(32)
-	packets_buf := make([]bindings.Iovec, 32)
+	num_packets := bindings.Size_t(4096)
+	packets_buf := make([]bindings.Iovec, 4096)
 
 	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
 	if int(num_packets) == 0 {
@@ -418,14 +364,15 @@ func (s *QClientSession) Close() error {
 	defer func() {
 		_ = recover()
 	}()
-	if !s.connected || s == nil || s.Conn == nil {
+	if !s.connected || s.closing || s == nil || s.Conn == nil {
 		return nil
 	}
 	s.Logger.Info().Msgf("== Connections %v WaitEnd ==\"", s.id)
 	defer s.Logger.Info().Msgf("== Connections %v End ==\"", s.id)
 
 	s.enterCritical(false)
-	s.connected = false
+
+	s.closing = true
 
 	s.ctxCancel()
 	// copy of stream list is to workaround lock issues
@@ -439,8 +386,13 @@ func (s *QClientSession) Close() error {
 
 	s.Logger.Warn().Msgf(">> streams to close: %v", tmpStreams)
 
+	wg := &sync.WaitGroup{}
+	wg.Add(len(tmpStreams))
+
 	for _, stream := range tmpStreams {
 		go func(st types.Stream) {
+			defer wg.Done()
+
 			s.Logger.Warn().Msgf(">> Trying to close stream %d / %p", st.ID(), st)
 			st.Sync()
 			st.Close()
@@ -448,25 +400,33 @@ func (s *QClientSession) Close() error {
 		}(stream)
 	}
 
-	s.enterCritical(false)
-	s.Logger.Warn().Msgf(">> Close queues %d(%v)", s.id, s.id)
-	safeClose(s.incomingQueue)
-	_ = s.Conn.Close()
-	s.exitCritical(false)
+	go func() {
+		defer func() {
+			s.closing = false
+			s.connected = false
+		}()
+		wg.Wait()
 
-	if s.OnConnectionClose != nil {
-		s.Logger.Debug().Msgf("Close connection: %d\n", s.id)
+		s.enterCritical(false)
+		s.Logger.Warn().Msgf(">> Close queues %d(%v)", s.id, s.id)
+		safeClose(s.incomingQueue)
+		_ = s.Conn.Close()
+		s.exitCritical(false)
 
-		s.OnConnectionClose(s)
-	}
-	bindings.RemoveConnection(s.id)
+		if s.OnConnectionClose != nil {
+			s.Logger.Debug().Msgf("Close connection: %d\n", s.id)
 
-	s.Logger.Warn().Msgf(">> Wait routines %d(%v)", s.id, s.id)
-	s.handlersWaiter.Wait()
+			s.OnConnectionClose(s)
+		}
+		s.Logger.Warn().Msgf(">> Wait routines %d(%v)", s.id, s.id)
+		s.handlersWaiter.Wait()
 
-	var connId = bindings.Size_t(s.id)
-	var err = bindings.QuiclyClose(connId, 0)
-	s.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", s.id, s.id, err)
+		bindings.RemoveConnection(s.id)
+
+		var connId = bindings.Size_t(s.id)
+		var err = bindings.QuiclyClose(connId, 0)
+		s.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", s.id, s.id, err)
+	}()
 
 	return nil
 }
