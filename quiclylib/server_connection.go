@@ -174,8 +174,7 @@ func (r *QServerConnection) connectionProcess() {
 		r.routinesWaiter.Done()
 		r.cancelFunc()
 		if err := recover(); err != nil {
-			r.Logger.Error().Msgf("PANIC: %v", err)
-			debug.PrintStack()
+			r.Logger.Error().Msgf("PANIC: %v %v\n", err, string(debug.Stack()))
 			//_ = r.Close()
 		}
 	}()
@@ -234,7 +233,7 @@ func (r *QServerConnection) connectionOutgoing() {
 		r.routinesWaiter.Done()
 		r.cancelFunc()
 		if err := recover(); err != nil {
-			r.Logger.Error().Msgf("PANIC: %v", err)
+			r.Logger.Error().Msgf("PANIC: %v %v\n", err, string(debug.Stack()))
 			debug.PrintStack()
 			//_ = r.Close()
 		}
