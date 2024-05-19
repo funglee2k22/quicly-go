@@ -157,24 +157,27 @@ func (s *QStream) Write(buffWr []byte) (n int, err error) {
 }
 
 func (s *QStream) flushToStream() {
+	defer s.Logger.Info().Msgf("%v quicly flush end", s.session.ID())
+
 	for !s.IsClosed() {
-		<-time.After(100 * time.Millisecond)
+		<-time.After(10 * time.Millisecond)
 
 		if s.streamOutBuf.Len() == 0 {
 			s.Logger.Debug().Msgf("[%v] SEND sync (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
 			continue
 		}
 
-		s.Logger.Info().Msgf("%v quicly write lock", s.session.ID())
 		s.outBufferLock.Lock()
 		data := make([]byte, 1024*1024)
 		buffSize, _ := s.streamOutBuf.Read(data)
 		s.outBufferLock.Unlock()
 
-		s.Logger.Info().Msgf("%v quicly write flush: %d", s.session.ID(), buffSize)
+		if s.IsClosed() {
+			return
+		}
+		s.Logger.Debug().Msgf("%v quicly write flush: %d", s.session.ID(), buffSize)
 		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
 			data[:buffSize], bindings.Size_t(buffSize))
-		s.Logger.Info().Msgf("%v quicly write flush done", s.session.ID())
 
 		if errcode != errors.QUICLY_OK {
 			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
@@ -183,9 +186,8 @@ func (s *QStream) flushToStream() {
 		sent, _ := s.waitSentBytes()
 
 		s.sentBytesCh <- sent
-		s.Logger.Info().Msgf("%v quicly flush done", s.session.ID())
+		s.Logger.Debug().Msgf("%v quicly flush done", s.session.ID())
 	}
-	s.Logger.Info().Msgf("%v quicly flush end", s.session.ID())
 }
 
 func (s *QStream) Close() error {

@@ -305,6 +305,8 @@ std::lock_guard<std::mutex> lock(global_lock);
   connections_map = NULL;
 
   WSACleanup();
+
+  TRACE(">> Closed Quicly-Go backend\n");
   return QUICLY_OK;
 }
 
@@ -742,7 +744,9 @@ std::lock_guard<std::mutex> lock(global_lock);
     quicly_get_first_timeout(econn);
 
     int ret = quicly_send(econn, &dest, &src, dgrams_out, num_dgrams, dgrams_buf, 4096 * 1470);
-    TRACE("\n\n>> quicly_send: %d %d\n", ret, *num_dgrams);
+    if( ret != 0 || *num_dgrams > 0 ) {
+        TRACE("\n\n>> quicly_send: %d %d\n", ret, *num_dgrams);
+    }
 
     switch (ret) {
     case 0:
