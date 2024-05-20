@@ -29,13 +29,20 @@ enum {
   QUICLY_CC_LAST
 };
 
+enum {
+  QUICLY_SS_RFC2001 = 0,
+  QUICLY_SS_DISABLED = 1,
+  QUICLY_SS_SEARCH = 2,
+  QUICLY_SS_LAST
+};
+
 struct iovec;
 
 // API
 extern int   QuiclyInitializeEngine(
                 uint64_t is_client, const char* alpn,
                 const char* certificate_file, const char* key_file, const uint64_t idle_timeout_ms,
-                uint64_t cc_algo, uint64_t use_search, uint64_t trace_quicly );
+                uint64_t cc_algo, uint64_t ss_algo, uint64_t trace_quicly );
 
 extern int   QuiclyCloseEngine();
 

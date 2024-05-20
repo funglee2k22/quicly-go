@@ -75,9 +75,6 @@ struct quiclygo_conn_entry {
 static struct hashmap *connections_map = NULL;
 
 static uint64_t requested_cc_algo = QUICLY_CC_RENO;
-static quicly_cc_flags_t flags = {
-    .use_slowstart_search = 0,
-};
 
 static quicly_stream_open_t stream_open = { on_stream_open };
 static quicly_closed_by_remote_t connection_closed = { on_connection_close };
@@ -120,6 +117,8 @@ const quicly_context_t quiclygo_context = {NULL,                                
                                               0, /* ack_frequency */
                                               400, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
                                               10, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
+                                              5, // DEFAULT_MAX_PROBE_PACKETS
+                                              100, // DEFAULT_MAX_PATH_VALIDATION_FAILURES
                                               1280 * 1000, // default_jumpstart_cwnd_packets
                                               1280 * 1000, // max_jumpstart_cwnd_packets
                                               0, /* enlarge_client_hello */
@@ -203,7 +202,7 @@ static void delete_connection( uint64_t conn_id )
 // ----- Startup ----- //
 
 int QuiclyInitializeEngine( uint64_t is_client, const char* alpn, const char* certificate_file, const char* key_file,
-      const uint64_t idle_timeout_ms, uint64_t cc_algo, uint64_t use_slowstart, uint64_t trace_quicly )
+      const uint64_t idle_timeout_ms, uint64_t cc_algo, uint64_t ss_algo, uint64_t trace_quicly )
 {
 
 std::lock_guard<std::mutex> lock(global_lock);
@@ -217,14 +216,6 @@ std::lock_guard<std::mutex> lock(global_lock);
   // update idle timeout
   quicly_idle_timeout_ms = idle_timeout_ms;
 
-  // register the requested CC algorithm
-  requested_cc_algo = cc_algo;
-  if( cc_algo < 0 || cc_algo >= QUICLY_CC_LAST ) {
-    TRACE("requested congestion control [%d] is not available\n\n", cc_algo);
-    return QUICLY_ERROR_UNKNOWN_CC_ALGO;
-  }
-  flags.use_slowstart_search = use_slowstart;
-
   // copy requested alpn
   memset( quicly_alpn, '\0', sizeof(char) * MAX_CONNECTIONS );
   strncpy( quicly_alpn, alpn, MAX_CONNECTIONS );
@@ -232,6 +223,37 @@ std::lock_guard<std::mutex> lock(global_lock);
   /* setup quicly context */
   ctx = quiclygo_context;
   ctx.transport_params.max_idle_timeout = quicly_idle_timeout_ms;
+
+  // register the requested CC algorithm
+  switch( cc_algo ) {
+    case QUICLY_CC_RENO:
+      ctx.init_cc = &quicly_cc_reno_init;
+      break;
+    case QUICLY_CC_CUBIC:
+      ctx.init_cc = &quicly_cc_cubic_init;
+      break;
+    case QUICLY_CC_PICO:
+      ctx.init_cc = &quicly_cc_pico_init;
+      break;
+    default:
+      break;
+  }
+
+  // register the requested SS algorithm
+  switch( ss_algo ) {
+    case QUICLY_SS_SEARCH:
+      ctx.cc_slowstart = &quicly_ss_type_search;
+      break;
+    case QUICLY_SS_DISABLED:
+      ctx.cc_slowstart = &quicly_ss_type_disabled;
+      break;
+    case QUICLY_SS_RFC2001:
+      ctx.cc_slowstart = &quicly_ss_type_rfc2001;
+      break;
+    // leave default for the type
+    default:
+      break;
+  }
 
   ctx.tls = &tlsctx;
   quicly_amend_ptls_context(ctx.tls);
@@ -284,37 +306,13 @@ int QuiclyCloseEngine() {
 
 std::lock_guard<std::mutex> lock(global_lock);
 
-  flags.use_slowstart_search = 0;
   global_trace_on = 0;
 
   hashmap_free( connections_map );
   connections_map = NULL;
 
   TRACE(">> Closed Quicly-Go backend\n");
-   return QUICLY_OK;
-}
-
-static int apply_requested_cc_algo(quicly_conn_t *conn, quicly_cc_flags_t flags)
-{
-  int ret = QUICLY_OK;
-  if( conn == NULL )
-    return QUICLY_ERROR_FAILED;
-
-  switch( requested_cc_algo ) {
-    case QUICLY_CC_RENO:
-      quicly_set_cc(conn, &quicly_cc_type_reno, flags);
-      break;
-    case QUICLY_CC_CUBIC:
-      quicly_set_cc(conn, &quicly_cc_type_cubic, flags);
-      break;
-    case QUICLY_CC_PICO:
-      quicly_set_cc(conn, &quicly_cc_type_pico, flags);
-      break;
-    default:
-      ret = QUICLY_ERROR_UNKNOWN_CC_ALGO;
-  }
-
-  return ret;
+  return QUICLY_OK;
 }
 
 // ----- Callbacks ----- //
@@ -555,12 +553,6 @@ std::lock_guard<std::mutex> lock(global_lock);
         return ret;
     }
 
-    if( (ret = apply_requested_cc_algo(newconn, flags) ) != 0 )
-    {
-        TRACE("apply_requested_cc_algo failed:%d\n\n", ret);
-        return ret;
-    }
-
     // track new connection
     struct quiclygo_conn_entry e = { .uuid=conn_id, .conn=newconn };
     hashmap_set( connections_map, &e );
@@ -670,11 +662,6 @@ std::lock_guard<std::mutex> lock(global_lock);
 
                 next_cid.master_id++;
                 TRACE(">> accept (%d) ret: %d next: %d\n", i, ret, next_cid.master_id);
-
-                if( ret == QUICLY_OK && (ret = apply_requested_cc_algo(conn, flags) ) != 0 )
-                {
-                    TRACE("apply_requested_cc_algo failed:%d\n\n", ret);
-                }
 
                 // track connection
                 add_connection( conn_id, conn );

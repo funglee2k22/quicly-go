@@ -6,8 +6,8 @@
 package bindings
 
 /*
-#cgo LDFLAGS: C:/home/dev/src/github.com/Project-Faster/qpep-faster/backend/quicly-go/internal/deps/lib/libquicly.a C:/home/dev/src/github.com/Project-Faster/qpep-faster/backend/quicly-go/internal/deps/lib/libcrypto.a C:/home/dev/src/github.com/Project-Faster/qpep-faster/backend/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
-#cgo CPPFLAGS: -DWIN32 -IC:/home/dev/src/github.com/Project-Faster/qpep-faster/backend/quicly-go/internal/deps/include/
+#cgo LDFLAGS: C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libquicly.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libcrypto.a C:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/lib/libssl.a -lm -lmswsock -lws2_32
+#cgo CPPFLAGS: -DWIN32 -IC:/home/dev/src/github.com/Project-Faster/quicly-go/internal/deps/include/
 #include "quicly.h"
 #include "quicly_wrapper.h"
 #include "quicly/streambuf.h"

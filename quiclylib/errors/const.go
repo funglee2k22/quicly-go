@@ -47,3 +47,14 @@ const (
 	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:29
 	QUICLY_CC_LAST = 3
 )
+
+const (
+	// QUICLY_SS_RFC2001 as declared in include/quicly_wrapper.h:33
+	QUICLY_SS_RFC2001 = iota
+	// QUICLY_SS_DISABLED as declared in include/quicly_wrapper.h:34
+	QUICLY_SS_DISABLED = 1
+	// QUICLY_SS_SEARCH as declared in include/quicly_wrapper.h:35
+	QUICLY_SS_SEARCH = 2
+	// QUICLY_SS_LAST as declared in include/quicly_wrapper.h:36
+	QUICLY_SS_LAST = 3
+)

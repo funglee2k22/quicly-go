@@ -66,10 +66,18 @@ func QuiclyInitializeEngine(options types.Options) int {
 		break
 	}
 
-	var use_search uint64 = 0
+	ss_algo := errors.QUICLY_SS_DISABLED
 	switch strings.ToLower(cc_slow) {
 	case "search":
-		use_search = 1
+		ss_algo = errors.QUICLY_SS_SEARCH
+		break
+	case "disabled":
+		ss_algo = errors.QUICLY_SS_DISABLED
+		break
+	case "rfc2001":
+		fallthrough
+	default:
+		ss_algo = errors.QUICLY_SS_RFC2001
 		break
 	}
 
@@ -83,7 +91,7 @@ func QuiclyInitializeEngine(options types.Options) int {
 	}
 
 	result := bindings.QuiclyInitializeEngine(is_client_int, proto, certfile, certkey, idle_timeout,
-		uint64(cc_algo), use_search, trace_quicly_int)
+		uint64(cc_algo), uint64(ss_algo), trace_quicly_int)
 	return int(result)
 }
 
