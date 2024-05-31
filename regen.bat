@@ -20,11 +20,11 @@ if %ERRORLEVEL% NEQ 0 goto fail
 :gen
 cd %BASEDIR%
 echo [Regen Errors package]
-c-for-go.exe -nostamp -nocgo -debug -path %BASEDIR% -out quiclylib genspec\errors.win32.yml
+c-for-go.exe -nostamp -nocgo -debug -path %BASEDIR% -out quiclylib genspec\errors.windows.yml
 if %ERRORLEVEL% NEQ 0 goto fail
 
 echo [Regen Quicly Bindings package]
-c-for-go.exe -nostamp -debug -path %BASEDIR% -out internal genspec\bindings.win32.yml
+c-for-go.exe -nostamp -debug -path %BASEDIR% -out internal genspec\bindings.windows.yml
 if %ERRORLEVEL% NEQ 0 goto fail
 
 :ok

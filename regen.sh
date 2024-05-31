@@ -15,6 +15,7 @@ function assert_errorcode() {
 }
 
 BASEDIR=$(dirname "$(realpath $0)")
+OSNAME=$(go env GOOS)
 
 echo [Prerequisites check: C_FOR_GO]
 c-for-go -h
@@ -27,11 +28,11 @@ fi
 
 cd $BASEDIR
 echo [Regen Errors package]
-c-for-go -nostamp -nocgo -debug -path "$BASEDIR" -out quiclylib genspec/errors.linux.yml
+c-for-go -nostamp -nocgo -debug -path "$BASEDIR" -out quiclylib genspec/errors.$OSNAME.yml
 assert_errorcode
 
 echo [Regen Quicly Bindings package]
-c-for-go -nostamp -debug -path "$BASEDIR" -out internal genspec/bindings.linux.yml
+c-for-go -nostamp -debug -path "$BASEDIR" -out internal genspec/bindings.$OSNAME.yml
 assert_errorcode
 
 echo

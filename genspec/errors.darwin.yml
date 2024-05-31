@@ -1,0 +1,26 @@
+GENERATOR:
+  PackageName: errors
+  PackageDescription: "quicly-errors"
+  PackageLicense: "None"
+  Includes: [ "quicly_wrapper.h" ]
+  FlagGroups:
+    - { name: CPPFLAGS, flags: [
+      "-I<basedir>/internal/deps/include/"
+    ] }
+
+PARSER:
+  Defines:
+    UNIX: 1
+  IncludePaths: [
+    "<basedir>/internal/deps/include/" ]
+  SourcesPaths: [
+    "quicly_wrapper.h",
+  ]
+
+TRANSLATOR:
+  ConstRules:
+    defines: eval
+  Rules:
+    global:
+      - { action: accept, from: "^QUICLY_" }
+      - { transform: export }

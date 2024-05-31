@@ -1,0 +1,51 @@
+GENERATOR:
+  PackageName: bindings
+  PackageDescription: "quicly-bindings"
+  PackageLicense: "None"
+  Includes: [ "quicly.h", "quicly_wrapper.h", "quicly/streambuf.h" ]
+  Options:
+    SafeStrings: true
+    ConstCharIsString: true
+  FlagGroups:
+    - { name: LDFLAGS, flags: [
+      "<basedir>/internal/deps/lib/libquicly.a",
+      "<basedir>/internal/deps/lib/libcrypto.a",
+      "<basedir>/internal/deps/lib/libssl.a",
+      "-lm",
+      "-ldl" ] }
+    - { name: CPPFLAGS, flags: [
+      "-DDARWIN",
+      "-I<basedir>/internal/deps/include/"
+    ] }
+
+PARSER:
+  Defines:
+    UNIX: 1
+  IncludePaths: [
+    "<basedir>/internal/deps/include/" ]
+  SourcesPaths: [
+    "quicly.h",
+    "quicly_wrapper.h",
+  ]
+
+TRANSLATOR:
+  ConstCharIsString: true
+  ConstUCharIsString: false
+  ConstRules:
+    defines: eval
+  Rules:
+    global:
+      - { action: accept, from: "^iovec$" }
+      - { action: accept, from: "^size_t$" }
+      - { action: accept, from: "^QUICLY_OK|QUICLY_ERROR_" }
+      - { action: ignore, from: "goQuicly" }
+      - { action: accept, from: "Quicly" }
+      - { transform: export }
+  LenFields:
+    .iov_base: "iov_len"
+  PtrTips:
+    function:
+      - { target: QuiclyConnect, tips: [ 0,0,ref ] }
+      - { target: QuiclyOpenStream, tips: [ 0,ref ] }
+      - { target: QuiclyProcessMsg, tips: [ 0,0,0,0,ref,ref ] }
+      - { target: QuiclyOutgoingMsgQueue, tips: [ 0,0,ref ] }
