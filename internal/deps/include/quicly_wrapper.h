@@ -6,6 +6,7 @@
 #include "stdarg.h"
 #include "stdlib.h"
 #include "stdint.h"
+#include "stddef.h"
 
 enum {
   QUICLY_OK = 0,  //!< No issue
