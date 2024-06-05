@@ -15,14 +15,19 @@ GENERATOR:
       "-ldl" ] }
     - { name: CPPFLAGS, flags: [
       "-DDARWIN",
+      "-D__APPLE__",
+      "-D__MACH__",
       "-I<basedir>/internal/deps/include/"
     ] }
 
 PARSER:
   Defines:
-    UNIX: 1
+    DARWIN: 1
+    __APPLE__: 1
+    __MACH__: 1
   IncludePaths: [
-    "<basedir>/internal/deps/include/" ]
+    "<basedir>/internal/deps/include/"
+  ]
   SourcesPaths: [
     "quicly.h",
     "quicly_wrapper.h",
