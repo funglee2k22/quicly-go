@@ -2,11 +2,15 @@
 #ifndef QUICLY_WRAPPER
 #define QUICLY_WRAPPER
 
-#include "stdio.h"
-#include "stdarg.h"
-#include "stdlib.h"
-#include "stdint.h"
-#include "stddef.h"
+#ifdef __APPLE__
+#include <sys/_types/_size_t.h>
+#endif
+
+#include <stddef.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <stdint.h>
 
 enum {
   QUICLY_OK = 0,  //!< No issue

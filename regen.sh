@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -xe
 
 echo "**************************************"
 echo "*****  QUICLY-GO BINDINGS REGEN  *****"
@@ -28,11 +28,11 @@ fi
 
 cd $BASEDIR
 echo [Regen Errors package]
-c-for-go -nostamp -nocgo -debug -path "$BASEDIR" -out quiclylib genspec/errors.$OSNAME.yml
+c-for-go -nostamp -nocgo -debug -ccdefs -ccincl -path "$BASEDIR" -out quiclylib genspec/errors.$OSNAME.yml
 assert_errorcode
 
 echo [Regen Quicly Bindings package]
-c-for-go -nostamp -debug -path "$BASEDIR" -out internal genspec/bindings.$OSNAME.yml
+c-for-go -nostamp -debug -ccdefs -ccincl -path "$BASEDIR" -out internal genspec/bindings.$OSNAME.yml
 assert_errorcode
 
 echo
