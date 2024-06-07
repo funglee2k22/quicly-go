@@ -17,7 +17,6 @@ GENERATOR:
       "-DDARWIN",
       "-D__APPLE__",
       "-D__MACH__",
-      "-std=c++11",
       "-I<basedir>/internal/deps/include/"
     ] }
 

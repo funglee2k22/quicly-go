@@ -519,7 +519,7 @@ std::lock_guard<std::mutex> lock(global_lock);
     struct in_addr byte_addr;
     byte_addr.s_addr = inet_addr(_address);
 
-    struct sockaddr_in address{
+    struct sockaddr_in address = {
       .sin_family = AF_INET,
       .sin_port = htons(port),
       .sin_addr = byte_addr
@@ -597,7 +597,7 @@ std::lock_guard<std::mutex> lock(global_lock);
     struct in_addr byte_addr;
     byte_addr.s_addr = inet_addr(_address);
 
-    struct sockaddr_in address{
+    struct sockaddr_in address = {
       .sin_family = AF_INET,
       .sin_port = htons(port),
       .sin_addr = byte_addr
