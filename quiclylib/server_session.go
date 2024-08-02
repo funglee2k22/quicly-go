@@ -94,7 +94,7 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 		targetHandler = &QServerConnection{}
 		targetHandler.init(s, addr, addrHash)
 
-		s.Logger.Debug().Msgf("CONN ADD %d", targetHandler.ID())
+		s.Logger.Debug().Msgf("CONN ADD %d (%v / %v)", targetHandler.ID(), addr, addrHash)
 		s.connections[targetHandler.returnHash] = targetHandler
 	}
 	return targetHandler
@@ -134,9 +134,9 @@ func (s *QServerSession) connectionInHandler() {
 
 	var buffList = make([][]byte, 0, 128)
 
-	_ = s.NetConn.SetReadBuffer(SMALL_BUFFER_SIZE)
-
 	runtime.LockOSThread()
+
+	_ = s.NetConn.SetReadBuffer(READ_SIZE * QUIC_BLOCK)
 
 	for {
 		if len(buffList) == 0 {
@@ -151,8 +151,6 @@ func (s *QServerSession) connectionInHandler() {
 		default:
 			break
 		}
-
-		_ = s.NetConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
 		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
 		if n == 0 || (n == 0 && err != nil) {

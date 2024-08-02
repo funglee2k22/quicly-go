@@ -16,7 +16,7 @@ package bindings
 */
 import "C"
 
-// Size_t type as declared in include/crtdefs.h:35
+// Size_t type as declared in include/corecrt.h:35
 type Size_t uint64
 
 // Iovec as declared in include/quicly.h:42

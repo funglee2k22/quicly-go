@@ -25,7 +25,7 @@ static std::mutex global_lock;
 #define MAX_CONNECTIONS 1024
 #define QUIC_VERSION    (0xff000000 | 29)
 
-static int global_trace_on = 0;
+static uint64_t global_trace_on = 0;
 
 static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void on_destroy(quicly_stream_t *stream, int err);
@@ -104,7 +104,7 @@ static quicly_stream_scheduler_t quicly_quiclygo_stream_scheduler = {quiclygo_st
 
 const quicly_context_t quiclygo_context = {NULL,                                                 /* tls */
                                               1280,          /* client_initial_size */
-                                              { (1024 / 8), 500, 200, 2 },                                /* loss */
+                                              { (1024 / 8), 500, 500, 2 },                                /* loss */
                                               {{30 * 1024 * 1472, 30 * 1024 * 1472, 30 * 1024 * 1472}, /* max_stream_data */
                                                10 * 1024 * 1472,                                    /* max_data */
                                                60 * 1000,                                           /* idle_timeout (30 seconds) */
@@ -116,7 +116,7 @@ const quicly_context_t quiclygo_context = {NULL,                                
                                               1028, // DEFAULT_INITCWND_PACKETS,
                                               QUIC_VERSION, // protocol version 29,
                                               4096, // DEFAULT_PRE_VALIDATION_AMPLIFICATION_LIMIT,
-                                              0, /* ack_frequency */
+                                              64, /* ack_frequency */
                                               400, // DEFAULT_HANDSHAKE_TIMEOUT_RTT_MULTIPLIER,
                                               10, // DEFAULT_MAX_INITIAL_HANDSHAKE_PACKETS,
                                               5, // DEFAULT_MAX_PROBE_PACKETS
@@ -488,6 +488,7 @@ static void on_acked_sent_bytes(quicly_stream_t *stream, size_t delta)
        uint64_t connId = get_connection_uuid( stream->conn );
        if( connId != 0 ) {
            goQuiclyOnStreamAckedSentBytes( connId, uint64_t(stream->stream_id), delta);
+           TRACE(">> ack -- %lld\n", delta);
        }
     }
 }
@@ -656,6 +657,7 @@ std::lock_guard<std::mutex> lock(global_lock);
                 ret = quicly_accept(&conn, &ctx, NULL, (struct sockaddr*)&address, decoded, NULL, &next_cid, NULL, NULL);
                 if( ret != QUICLY_OK ) {
                     TRACE(">> err: %d\n", ret);
+                    err = ret;
                     break;
                 }
 
@@ -900,6 +902,8 @@ static int quiclygo_stream_scheduler_do_send(quicly_stream_scheduler_t *self, qu
 
     if (!conn_is_blocked)
         quicly_linklist_insert_list(&sched->active, &sched->blocked);
+    else
+        TRACE( "Connection is blocked." );
 
     while (quicly_can_send_data((quicly_conn_t *)conn, s) && quicly_linklist_is_linked(&sched->active)) {
         /* detach the first active stream */
@@ -916,6 +920,7 @@ static int quiclygo_stream_scheduler_do_send(quicly_stream_scheduler_t *self, qu
             /* FIXME Stop quicly_send_stream emitting SENDBUF_FULL (happens when CWND is congested). Otherwise, we need to make
              * adjustments to the scheduler after popping a stream */
             if (ret == QUICLY_ERROR_SENDBUF_FULL) {
+                TRACE( "Sendbuffer is full." );
                 assert(quicly_stream_can_send(stream, 1));
                 link_stream(sched, stream, conn_is_blocked);
             }
@@ -923,6 +928,8 @@ static int quiclygo_stream_scheduler_do_send(quicly_stream_scheduler_t *self, qu
         }
         /* reschedule */
         conn_is_blocked = quicly_is_blocked(conn);
+        if( conn_is_blocked )
+            TRACE( "Connection is blocked." );
         if (quicly_stream_can_send(stream, 1))
             link_stream(sched, stream, conn_is_blocked);
     }
@@ -938,9 +945,11 @@ static int quiclygo_stream_scheduler_update_state(quicly_stream_scheduler_t *sel
     struct st_quicly_default_scheduler_state_t *sched = &((struct _st_quicly_conn_public_t *)stream->conn)->_default_scheduler;
 
     if (quicly_stream_can_send(stream, 1)) {
+        TRACE( "Stream can send." );
         /* activate if not */
         link_stream(sched, stream, quicly_is_blocked(stream->conn));
     } else {
+        TRACE( "Stream cannot send." );
         /* deactivate if active */
         if (quicly_linklist_is_linked(&stream->_send_aux.pending_link.default_scheduler))
             quicly_linklist_unlink(&stream->_send_aux.pending_link.default_scheduler);

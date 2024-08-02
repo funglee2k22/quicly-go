@@ -63,7 +63,7 @@ func Dial(remoteAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) type
 	}
 
 	conn := &quiclylib.QClientSession{
-		Conn:      udpConn,
+		NetConn:   udpConn,
 		Ctx:       ctx,
 		Logger:    logger.With().Timestamp().Logger(),
 		Callbacks: cb,

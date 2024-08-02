@@ -16,9 +16,9 @@ import (
 
 type QClientSession struct {
 	// exported fields
-	Conn   *net.UDPConn
-	Ctx    context.Context
-	Logger log.Logger
+	NetConn *net.UDPConn
+	Ctx     context.Context
+	Logger  log.Logger
 
 	// callback
 	types.Callbacks
@@ -118,17 +118,24 @@ func (s *QClientSession) connect() int {
 func (s *QClientSession) connectionInHandler() {
 	defer func() {
 		_ = recover()
+		runtime.UnlockOSThread()
 		s.ctxCancel()
 		s.handlersWaiter.Done()
 	}()
 
-	var buffList = make([][]byte, 0, 128)
-	for i := 0; i < 128; i++ {
+	runtime.LockOSThread()
+
+	var buffList = make([][]byte, 0, 32)
+	for i := 0; i < 4096; i++ {
 		buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
 	}
 
 	s.Logger.Info().Msgf("CONN IN START %v", s.id)
 	defer s.Logger.Info().Msgf("CONN IN END %v", s.id)
+
+	var counter = 0
+
+	s.NetConn.SetReadBuffer(32 * 1280 * 1024)
 
 	for {
 		select {
@@ -138,34 +145,31 @@ func (s *QClientSession) connectionInHandler() {
 			break
 		}
 
-		s.Conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		//s.NetConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
-		n, addr, err := s.Conn.ReadFromUDP(buffList[0])
-		s.Logger.Debug().Msgf("[%v] UDP packet %d %v", s.id, n, addr)
+		n, addr, err := s.NetConn.ReadFromUDP(buffList[0])
+		s.Logger.Debug().Msgf("[%v] UDP packet %d %v (%d)", s.id, n, addr, counter)
 		if n == 0 || (n == 0 && err != nil) {
 			s.Logger.Debug().Msgf("QUICLY No packet")
 			continue
 		}
+		counter++
 
 		buf := buffList[0]
-		buffList = buffList[1:]
-		if len(buffList) == 0 {
-			for i := 0; i < 128; i++ {
-				buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
-			}
-		}
-
 		pkt := &types.Packet{
 			Data:       buf[:n],
 			DataLen:    n,
 			RetAddress: addr,
 		}
 		s.incomingQueue <- pkt
+
+		buffList = buffList[1:]
+		buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
 	}
 }
 
 func (s *QClientSession) connectionProcessHandler() {
-	returnAddr := s.Conn.RemoteAddr().(*net.UDPAddr)
+	returnAddr := s.NetConn.RemoteAddr().(*net.UDPAddr)
 	defer func() {
 		_ = recover()
 		s.ctxCancel()
@@ -183,10 +187,11 @@ func (s *QClientSession) connectionProcessHandler() {
 			return
 
 		case pkt := <-s.incomingQueue:
+			s.Logger.Debug().Msgf("[%v] RECV packet (%d : %d)", s.id, pkt.Streamid, pkt.DataLen)
 			buffer = append(buffer, pkt)
 			break
 
-		case <-time.After(1 * time.Millisecond):
+		case <-time.After(5 * time.Millisecond):
 			for _, pkt := range buffer {
 				if len(s.streams) == 0 {
 					s.Logger.Debug().Msgf("[%v] No active streams", s.id)
@@ -232,7 +237,7 @@ func (s *QClientSession) flushOutgoingQueue() int32 {
 
 	switch ret {
 	case bindings.QUICLY_ERROR_NOT_OPEN:
-		s.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN", ret)
+		s.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN")
 		return ret
 	default:
 		s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
@@ -241,17 +246,20 @@ func (s *QClientSession) flushOutgoingQueue() int32 {
 		break
 	}
 
+	s.NetConn.SetWriteBuffer(READ_SIZE * QUIC_BLOCK)
+
 	s.Logger.Debug().Msgf("CONN flush (%d) %v", num_packets, s.id)
 	for i := 0; i < int(num_packets); i++ {
 		packets_buf[i].Deref() // realize the struct copy from C -> go
 
 		data := bindings.IovecToBytes(packets_buf[i])
 
-		_ = s.Conn.SetWriteDeadline(time.Now().Add(5 * time.Millisecond))
+		_ = s.NetConn.SetWriteDeadline(time.Now().Add(WRITE_TIMEOUT))
 
-		n, err := s.Conn.Write(data)
+		n, err := s.NetConn.Write(data)
 		s.Logger.Debug().Msgf("[%v] SEND packet %d bytes [%v]", s.id, n, err)
 	}
+	<-time.After(WRITE_PACING)
 
 	runtime.KeepAlive(num_packets)
 	runtime.KeepAlive(packets_buf)
@@ -284,7 +292,7 @@ func (s *QClientSession) OpenStream() types.Stream {
 
 	st := &QStream{
 		session: s,
-		conn:    s.Conn,
+		conn:    s.NetConn,
 		id:      uint64(streamId),
 		Logger:  s.Logger,
 	}
@@ -364,7 +372,7 @@ func (s *QClientSession) Close() error {
 	defer func() {
 		_ = recover()
 	}()
-	if !s.connected || s.closing || s == nil || s.Conn == nil {
+	if !s.connected || s.closing || s == nil || s.NetConn == nil {
 		return nil
 	}
 	s.Logger.Info().Msgf("== Connections %v WaitEnd ==\"", s.id)
@@ -394,7 +402,6 @@ func (s *QClientSession) Close() error {
 			defer wg.Done()
 
 			s.Logger.Warn().Msgf(">> Trying to close stream %d / %p", st.ID(), st)
-			st.Sync()
 			st.Close()
 			s.Logger.Warn().Msgf(">> Closed stream %d / %p", st.ID(), st)
 		}(stream)
@@ -410,7 +417,7 @@ func (s *QClientSession) Close() error {
 		s.enterCritical(false)
 		s.Logger.Warn().Msgf(">> Close queues %d(%v)", s.id, s.id)
 		safeClose(s.incomingQueue)
-		_ = s.Conn.Close()
+		_ = s.NetConn.Close()
 		s.exitCritical(false)
 
 		if s.OnConnectionClose != nil {
@@ -421,10 +428,12 @@ func (s *QClientSession) Close() error {
 		s.Logger.Warn().Msgf(">> Wait routines %d(%v)", s.id, s.id)
 		s.handlersWaiter.Wait()
 
-		bindings.RemoveConnection(s.id)
-
 		var connId = bindings.Size_t(s.id)
 		var err = bindings.QuiclyClose(connId, 0)
+
+		s.flushOutgoingQueue()
+
+		bindings.RemoveConnection(s.id)
 		s.Logger.Warn().Msgf(">> Quicly Close %d(%v): %v", s.id, s.id, err)
 	}()
 
@@ -436,5 +445,5 @@ func (s *QClientSession) IsClosed() bool {
 }
 
 func (s *QClientSession) Addr() net.Addr {
-	return s.Conn.RemoteAddr()
+	return s.NetConn.RemoteAddr()
 }

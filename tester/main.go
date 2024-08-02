@@ -41,7 +41,7 @@ type TesterOptions struct {
 	quicly.Options
 }
 
-type tester_func func(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context)
+type testerFunc func(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context, cancel context.CancelFunc)
 
 func (q qgoAdapter) LocalAddr() net.Addr {
 	return q.locip
@@ -71,18 +71,20 @@ func init() {
 		Logger()
 }
 
-func main() {
-	var verboseFlag = flag.Bool("verbose", false, "Verbose output")
-	var clientFlag = flag.Bool("client", false, "Operate as client")
-	var quicgoFlag = flag.Bool("quicgo", false, "Use QuicGo lib")
-	var remoteHost = flag.String("host", "127.0.0.1", "Host address to use")
-	var remotePort = flag.Int("port", 8443, "Port to use")
-	var certFile = flag.String("cert", "server_cert.pem", "PEM certificate to use")
-	var certKey = flag.String("key", "", "PEM key for the certificate")
-	var randServerPayload = flag.Int("payload", 4096, "Random payload to download on server connection")
-	var ccaFlag = flag.String("cca", "reno", "Congestion algorithm to use (reno|cubic|pico)")
-	var ccaSlowFlag = flag.String("ccslow", "basic", "Slowstart algorithm to use (basic|search)")
+var verboseFlag = flag.Bool("verbose", false, "Verbose output")
+var traceFlag = flag.Bool("trace", false, "Trace output")
+var clientFlag = flag.Bool("client", false, "Operate as client")
+var keepOpenFlag = flag.Bool("keep", false, "Do not terminate after first stream")
+var quicgoFlag = flag.Bool("quicgo", false, "Use QuicGo lib")
+var remoteHost = flag.String("host", "127.0.0.1", "Host address to use")
+var remotePort = flag.Int("port", 8443, "Port to use")
+var certFile = flag.String("cert", "server_cert.pem", "PEM certificate to use")
+var certKey = flag.String("key", "", "PEM key for the certificate")
+var randServerPayload = flag.Int("payload", 4096, "Random payload to download on server connection")
+var ccaFlag = flag.String("cca", "reno", "Congestion algorithm to use (reno|cubic|pico)")
+var ccaSlowFlag = flag.String("ccslow", "basic", "Slowstart algorithm to use (basic|search)")
 
+func main() {
 	flag.Parse()
 
 	if *clientFlag {
@@ -91,6 +93,8 @@ func main() {
 		logFile, _ = os.Create("tester-server.log")
 	}
 	defer logFile.Close()
+
+	log.TimeFieldFormat = time.StampMilli
 
 	var lvl = log.InfoLevel
 	if *verboseFlag {
@@ -107,10 +111,10 @@ func main() {
 		CertificateFile:      *certFile,
 		CertificateKey:       *certKey,
 		ApplicationProtocol:  "qpep_quicly",
-		IdleTimeoutMs:        3000,
+		IdleTimeoutMs:        60000,
 		CongestionAlgorithm:  *ccaFlag,
 		CCSlowstartAlgorithm: *ccaSlowFlag,
-		TraceQuicly:          *verboseFlag,
+		TraceQuicly:          *traceFlag,
 	}
 
 	logger.Info().Msgf("Options: %v", options)
@@ -139,7 +143,7 @@ func main() {
 	}
 	ctx = context.WithValue(ctx, "Payload", str)
 
-	var tester_runner tester_func
+	var tester_runner testerFunc
 
 	if *clientFlag {
 		if len(options.CertificateFile) == 0 {
@@ -171,11 +175,10 @@ func main() {
 		logger.Warn().Msg("Received termination signal")
 
 		cancel()
-		os.Exit(1)
 	}()
 
 	executorWaitGroup.Add(1)
-	tester_runner(&executorWaitGroup, ip, ctx)
+	tester_runner(&executorWaitGroup, ip, ctx, cancel)
 
 	if !(*quicgoFlag) {
 		logger.Warn().Msg("term...")
@@ -183,15 +186,15 @@ func main() {
 		logger.Warn().Msg("terminated")
 	}
 
-	//logger.Warn().Msg("Closing...")
+	logger.Warn().Msg("Closing...")
 
-	//executorWaitGroup.Wait()
+	executorWaitGroup.Wait()
 
 	logger.Warn().Msg("Closed")
 	os.Exit(0)
 }
 
-func runAsClient_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
+func runAsClient_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context, cancel context.CancelFunc) {
 	logger.Info().Msgf("Starting as client")
 	defer wgOut.Done()
 
@@ -214,6 +217,7 @@ func runAsClient_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	}
 	defer func() {
 		_ = c.CloseWithError(quic.ApplicationErrorCode(0), "close")
+		cancel()
 	}()
 
 	st, err := c.OpenStream()
@@ -227,11 +231,13 @@ func runAsClient_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	go handleClientStream_read(wg, &qgoAdapter{
+	ctxSt, cancelSt := context.WithCancel(context.Background())
+
+	go handleClientStreamRead(wg, ctxSt, cancelSt, &qgoAdapter{
 		Stream: st,
 		remip:  ip,
 	})
-	go handleClientStream_write(wg, &qgoAdapter{
+	go handleClientStreamWrite(wg, ctxSt, cancelSt, &qgoAdapter{
 		Stream: st,
 		remip:  ip,
 	})
@@ -239,7 +245,7 @@ func runAsClient_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	wg.Wait()
 }
 
-func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
+func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context, cancel context.CancelFunc) {
 	logger.Info().Msgf("Starting as server")
 	defer wgOut.Done()
 
@@ -281,6 +287,7 @@ func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	}
 	defer func() {
 		c.Close()
+		cancel()
 	}()
 
 	defer logger.Info().Msgf("END: runAsServer_quicgo")
@@ -313,13 +320,15 @@ func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 					wg := &sync.WaitGroup{}
 					wg.Add(2)
 
-					go handleServerStream_write(wg, &qgoAdapter{
+					ctxSt, cancelSt := context.WithCancel(context.Background())
+
+					go handleServerStreamWrite(wg, ctxSt, cancelSt, &qgoAdapter{
 						Stream: st,
 						locip:  ip,
 						remip:  nil,
 					}, bytes.NewBuffer(fulldata.Bytes()))
 
-					go handleServerStream_read(wg, &qgoAdapter{
+					go handleServerStreamRead(wg, ctxSt, cancelSt, &qgoAdapter{
 						Stream: st,
 						locip:  ip,
 						remip:  nil,
@@ -327,13 +336,17 @@ func runAsServer_quicgo(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 
 					wg.Wait()
 					logger.Info().Msgf("terminated stream id: %v", st.StreamID())
+
+					if !*keepOpenFlag {
+						cancel()
+					}
 				}()
 			}
 		}()
 	}
 }
 
-func runAsClient_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
+func runAsClient_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context, cancel context.CancelFunc) {
 	logger.Info().Msgf("Starting as client")
 	defer wgOut.Done()
 
@@ -353,6 +366,7 @@ func runAsClient_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 	}, ctx)
 	defer func() {
 		c.Close()
+		cancel()
 	}()
 
 	st := c.OpenStream()
@@ -360,18 +374,23 @@ func runAsClient_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 		return
 	}
 
-	defer logger.Info().Msgf("END: runAsClient_quicly")
+	defer func() {
+		_ = st.Close()
+		logger.Info().Msgf("END: runAsClient_quicly")
+	}()
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	go handleClientStream_read(wg, st)
-	go handleClientStream_write(wg, st)
+	ctxSt, cancelSt := context.WithCancel(context.Background())
+
+	go handleClientStreamRead(wg, ctxSt, cancelSt, st)
+	go handleClientStreamWrite(wg, ctxSt, cancelSt, st)
 
 	wg.Wait()
 }
 
-func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context) {
+func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Context, cancel context.CancelFunc) {
 	logger.Info().Msgf("Starting as server")
 	defer wgOut.Done()
 
@@ -390,7 +409,10 @@ func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 		},
 	}, ctx)
 
-	defer logger.Info().Msgf("END: runAsServer_quicly")
+	defer func() {
+		logger.Info().Msgf("END: runAsServer_quicly")
+		cancel()
+	}()
 
 	fulldata := ctx.Value("Payload").(*bytes.Buffer)
 	dumpDataToFile("server", fulldata)
@@ -413,21 +435,30 @@ func runAsServer_quicly(wgOut *sync.WaitGroup, ip *net.UDPAddr, ctx context.Cont
 
 			go func() {
 				logger.Info().Msgf("accepted stream from %v", st)
-				defer logger.Info().Msgf("END: runAsServer_quicly connection")
+				defer func() {
+					_ = st.Close()
+					logger.Info().Msgf("END: runAsServer_quicly connection")
+				}()
 
 				wg := &sync.WaitGroup{}
 				wg.Add(2)
 
-				go handleServerStream_read(wg, st)
-				go handleServerStream_write(wg, st, bytes.NewBuffer(fulldata.Bytes()))
+				ctxSt, cancelSt := context.WithCancel(context.Background())
+
+				go handleServerStreamRead(wg, ctxSt, cancelSt, st)
+				go handleServerStreamWrite(wg, ctxSt, cancelSt, st, bytes.NewBuffer(fulldata.Bytes()))
 
 				wg.Wait()
+
+				if !*keepOpenFlag {
+					cancel()
+				}
 			}()
 		}()
 	}
 }
 
-func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
+func handleServerStreamRead(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc, stream net.Conn) {
 	total := 0
 	startTime := time.Now()
 	defer func() {
@@ -436,31 +467,38 @@ func handleServerStream_read(wg *sync.WaitGroup, stream net.Conn) {
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleServerStream_read (%d)(%v)", total, time.Since(startTime))
+		cancel()
+		logger.Info().Msgf("END: handleServerStreamRead (%d)(%v)", total, time.Since(startTime))
 	}()
 
 	data := make([]byte, quiclylib.READ_SIZE)
 	for {
-		logger.Debug().Msgf("Read Stream")
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			break
+		}
 
 		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := stream.Read(data)
 		total += n
 		if n > 0 {
-			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
+			logger.Info().Msgf("Read(%d)", n)
+			logger.Debug().Msgf("Data(%d): %v", n, string(data[:n]))
 		}
 		if err == nil {
 			continue
 		}
 		var netErr, ok = err.(net.Error)
-		if err != io.EOF || (ok && netErr.Temporary()) {
+		if (!ok && err != io.EOF) || (ok && !netErr.Timeout()) {
 			logger.Err(err).Send()
 			return
 		}
 	}
 }
 
-func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes.Buffer) {
+func handleServerStreamWrite(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc, stream net.Conn, buffer *bytes.Buffer) {
 	total := 0
 	startTime := time.Now()
 	defer func() {
@@ -469,12 +507,18 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleServerStream_write (%d)(%v)", total, time.Since(startTime))
+		cancel()
+		logger.Info().Msgf("END: handleServerStreamWrite (%d)(%v)", total, time.Since(startTime))
 	}()
 
-	data := make([]byte, buffer.Len())
+	data := make([]byte, quiclylib.READ_SIZE)
 	for {
-		logger.Debug().Msgf("Write Stream")
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			break
+		}
 
 		n, err := buffer.Read(data)
 		if err != nil {
@@ -486,13 +530,14 @@ func handleServerStream_write(wg *sync.WaitGroup, stream net.Conn, buffer *bytes
 		n, err = stream.Write(data[:n])
 		total += n
 		if n > 0 {
-			logger.Info().Msgf("Write(%d): %v", n, string(data[:n]))
+			logger.Info().Msgf("Write(%d)", n)
+			logger.Debug().Msgf("Data(%d): %v", n, string(data[:n]))
 		}
 		if err == nil {
 			continue
 		}
 		var netErr, ok = err.(net.Error)
-		if err != io.EOF || (ok && netErr.Temporary()) {
+		if (!ok && err != io.EOF) || (ok && !netErr.Timeout()) {
 			logger.Err(err).Send()
 			return
 		}
@@ -508,7 +553,7 @@ func dumpDataToFile(prefix string, buf *bytes.Buffer) {
 	}
 }
 
-func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
+func handleClientStreamRead(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc, stream net.Conn) {
 	buf := bytes.NewBuffer(make([]byte, 0, quiclylib.READ_SIZE))
 	total := 0
 	startTime := time.Now()
@@ -518,35 +563,40 @@ func handleClientStream_read(wg *sync.WaitGroup, stream net.Conn) {
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleClientStream_read (%d)(%v)", total, time.Since(startTime))
+		cancel()
+		logger.Info().Msgf("END: handleClientStreamRead (%d)(%v)", total, time.Since(startTime))
 	}()
 	defer dumpDataToFile("client", buf)
 
-	var lastread = time.Now().Add(3 * time.Second)
 	data := make([]byte, quiclylib.READ_SIZE)
 
 	for {
-		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-		n, err := stream.Read(data)
-		logger.Debug().Msgf("Read(%d,%v) %v", n, err, string(data[:n]))
-		total += n
-		if n > 0 {
-			logger.Info().Msgf("Read(%d): %v", n, string(data[:n]))
-			buf.Write(data[:n])
-			lastread = time.Now().Add(3 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			break
 		}
 
-		if err != nil || n == 0 {
-			if time.Now().After(lastread) {
-				logger.Err(err).Send()
-				return
-			}
+		_ = stream.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		n, err := stream.Read(data)
+		total += n
+		if n > 0 {
+			logger.Info().Msgf("Read(%d)", n)
+			logger.Debug().Msgf("Data(%d): %v", n, string(data[:n]))
+		}
+		if err == nil {
 			continue
+		}
+		var netErr, ok = err.(net.Error)
+		if (!ok && err != io.EOF) || (ok && !netErr.Timeout()) {
+			logger.Err(err).Send()
+			return
 		}
 	}
 }
 
-func handleClientStream_write(wg *sync.WaitGroup, stream net.Conn) {
+func handleClientStreamWrite(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc, stream net.Conn) {
 	total := 0
 	startTime := time.Now()
 	defer func() {
@@ -555,23 +605,34 @@ func handleClientStream_write(wg *sync.WaitGroup, stream net.Conn) {
 			debug.PrintStack()
 		}
 		wg.Done()
-		logger.Info().Msgf("END: handleClientStream_write (%d)(%v)", total, time.Since(startTime))
+		cancel()
+		logger.Info().Msgf("END: handleClientStreamWrite (%d)(%v)", total, time.Since(startTime))
 	}()
 
 	scan := bufio.NewScanner(os.Stdin)
 	for scan.Scan() {
-		logger.Debug().Msgf("Write Stream")
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			break
+		}
 
 		_ = stream.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-		n, err := stream.Write(scan.Bytes())
+		data := scan.Bytes()
+		n, err := stream.Write(data)
 		total += n
-		if err != nil {
-			if err != io.EOF && !err.(net.Error).Timeout() {
-				logger.Err(err).Send()
-				return
-			}
+		if n > 0 {
+			logger.Info().Msgf("Write(%d)", n)
+			logger.Debug().Msgf("Data(%d): %v", n, string(data[:n]))
+		}
+		if err == nil {
 			continue
 		}
-		logger.Info().Msgf("Write(%d): %v", n, scan.Text())
+		var netErr, ok = err.(net.Error)
+		if (!ok && err != io.EOF) || (ok && !netErr.Timeout()) {
+			logger.Err(err).Send()
+			return
+		}
 	}
 }
