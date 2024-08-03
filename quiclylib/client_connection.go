@@ -176,8 +176,8 @@ func (s *QClientSession) connectionProcessHandler() {
 		s.handlersWaiter.Done()
 	}()
 
-	s.Logger.Info().Msgf("CONN PROC START %v", s.id)
-	defer s.Logger.Info().Msgf("CONN PROC END %v", s.id)
+	s.Logger.Debug().Msgf("CONN PROC START %v", s.id)
+	defer s.Logger.Debug().Msgf("CONN PROC END %v", s.id)
 
 	buffer := make([]*types.Packet, 0, 32)
 
@@ -339,8 +339,8 @@ func (s *QClientSession) OnStreamOpen(streamId uint64) {
 }
 
 func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
-	s.Logger.Info().Msgf(">> On close stream: %d\n", streamId)
-	defer s.Logger.Info().Msgf("<< On close stream: %d\n", streamId)
+	s.Logger.Debug().Msgf(">> On close stream: %d\n", streamId)
+	defer s.Logger.Debug().Msgf("<< On close stream: %d\n", streamId)
 
 	s.enterCritical(false)
 	st, ok := s.streams[streamId]
@@ -356,7 +356,7 @@ func (s *QClientSession) OnStreamClose(streamId uint64, error int) {
 	}
 
 	if shouldTerm {
-		s.Logger.Info().Msgf(">> Closing parent: %d\n", s.id)
+		s.Logger.Debug().Msgf(">> Closing parent: %d\n", s.id)
 		s.ctxCancel()
 		return
 	}
@@ -375,7 +375,7 @@ func (s *QClientSession) Close() error {
 	if !s.connected || s.closing || s == nil || s.NetConn == nil {
 		return nil
 	}
-	s.Logger.Info().Msgf("== Connections %v WaitEnd ==\"", s.id)
+	s.Logger.Debug().Msgf("== Connections %v WaitEnd ==\"", s.id)
 	defer s.Logger.Info().Msgf("== Connections %v End ==\"", s.id)
 
 	s.enterCritical(false)

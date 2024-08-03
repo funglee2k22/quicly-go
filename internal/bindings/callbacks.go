@@ -13,6 +13,7 @@ import (
 
 var connectionsRegistry map[uint64]types.Session
 var mtx_registry sync.Mutex
+var TracingOn = false
 
 func ResetRegistry() {
 	mtx_registry.Lock()
@@ -35,7 +36,7 @@ func RegisterConnection(s types.Session, id uint64) {
 	}
 
 	if connectionsRegistry[id] == nil || connectionsRegistry[id].ID() != s.ID() {
-		fmt.Printf("added connection id: %d index: %d (%v)\n", s.ID(), id, &s)
+		logTraceMessage("added connection id: %d index: %d (%v)\n", s.ID(), id, &s)
 		connectionsRegistry[id] = s
 	}
 }
@@ -53,22 +54,28 @@ func RemoveConnection(id uint64) {
 	defer mtx_registry.Unlock()
 
 	if s, ok := connectionsRegistry[id]; ok {
-		fmt.Printf("removed connection id: %d index: %d (%v)\n", s.ID(), id, &s)
+		logTraceMessage("removed connection id: %d index: %d (%v)\n", s.ID(), id, &s)
 		delete(connectionsRegistry, id)
+	}
+}
+
+func logTraceMessage(format string, args ...interface{}) {
+	if TracingOn {
+		fmt.Printf(format, args...)
 	}
 }
 
 //export goQuiclyOnStreamOpen
 func goQuiclyOnStreamOpen(conn_id C.uint64_t, stream_id C.uint64_t) {
-	fmt.Printf(">> open stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+	logTraceMessage(">> open stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 
 	mtx_registry.Lock()
 	defer mtx_registry.Unlock()
 
-	//fmt.Printf(">> open stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+	logTraceMessage(">> open stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 	if !ok {
-		//fmt.Printf("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
@@ -77,7 +84,7 @@ func goQuiclyOnStreamOpen(conn_id C.uint64_t, stream_id C.uint64_t) {
 
 //export goQuiclyOnStreamClose
 func goQuiclyOnStreamClose(conn_id C.uint64_t, stream_id C.uint64_t, error C.int) {
-	fmt.Printf("close stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+	logTraceMessage("close stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 
 	mtx_registry.Lock()
 	defer mtx_registry.Unlock()
@@ -99,13 +106,13 @@ func goQuiclyOnStreamReceived(conn_id C.uint64_t, stream_id C.uint64_t, data *C.
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 
 	if !ok {
-		fmt.Printf("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
 	st := conn.GetStream(uint64(stream_id))
 	if st == nil {
-		fmt.Printf("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
@@ -126,13 +133,13 @@ func goQuiclyOnStreamSentBytes(conn_id C.uint64_t, stream_id C.uint64_t, sentByt
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 
 	if !ok {
-		fmt.Printf("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
 	st := conn.GetStream(uint64(stream_id))
 	if st == nil {
-		fmt.Printf("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
@@ -147,13 +154,13 @@ func goQuiclyOnStreamAckedSentBytes(conn_id C.uint64_t, stream_id C.uint64_t, ac
 	conn, ok := connectionsRegistry[uint64(conn_id)]
 
 	if !ok {
-		fmt.Printf("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find connection: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 
 	st := conn.GetStream(uint64(stream_id))
 	if st == nil {
-		fmt.Printf("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
+		logTraceMessage("could not find stream: %d %d\n", uint64(conn_id), uint64(stream_id))
 		return
 	}
 

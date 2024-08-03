@@ -157,7 +157,7 @@ func (s *QStream) Write(buffWr []byte) (n int, err error) {
 }
 
 func (s *QStream) flushToStream() {
-	defer s.Logger.Info().Msgf("%v quicly flush end", s.session.ID())
+	defer s.Logger.Debug().Msgf("%v quicly flush end", s.session.ID())
 
 	for !s.IsClosed() {
 		<-time.After(10 * time.Millisecond)

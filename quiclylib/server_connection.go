@@ -74,7 +74,7 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	}
 
 	r.id = rand.Uint64()
-	session.Logger.Info().Msgf("Server handler init: %v (%v)", addr, r.id)
+	session.Logger.Info().Msgf("QServerConnection init: %v (%v)", addr, r.id)
 
 	if session == nil || addr == nil {
 		panic(errors.QUICLY_ERROR_FAILED)
@@ -181,8 +181,8 @@ func (r *QServerConnection) connectionProcess() {
 		}
 	}()
 
-	r.Logger.Info().Msgf("CONN PROC START %v", r.id)
-	defer r.Logger.Info().Msgf("CONN PROC END %v", r.id)
+	r.Logger.Debug().Msgf("CONN PROC START %v", r.id)
+	defer r.Logger.Debug().Msgf("CONN PROC END %v", r.id)
 
 	buffer := make([]*types.Packet, 0, 32)
 
@@ -192,7 +192,7 @@ func (r *QServerConnection) connectionProcess() {
 			return
 
 		case pkt := <-r.incomingQueue:
-			r.Logger.Info().Msgf("CONN IN BUFF %v", pkt.DataLen)
+			r.Logger.Debug().Msgf("CONN IN BUFF %v", pkt.DataLen)
 			buffer = append(buffer, pkt)
 			break
 
@@ -202,7 +202,7 @@ func (r *QServerConnection) connectionProcess() {
 					r.Logger.Error().Msgf("CONN PROC ERR %v", pkt)
 					break
 				}
-				r.Logger.Info().Msgf("CONN PROC %v (%d)", pkt.DataLen, i)
+				r.Logger.Debug().Msgf("CONN PROC %v (%d)", pkt.DataLen, i)
 
 				ret := r.handleProcessPacket(pkt)
 				switch ret {
@@ -363,7 +363,7 @@ func (r *QServerConnection) Close() error {
 	}
 	r.closing = true
 
-	r.Logger.Info().Msgf("== Connections %v WaitEnd ==\"", r.id)
+	r.Logger.Debug().Msgf("== Connections %v WaitEnd ==\"", r.id)
 
 	r.cancelFunc()
 

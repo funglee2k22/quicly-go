@@ -93,6 +93,7 @@ func QuiclyInitializeEngine(options types.Options) int {
 	if trace_quicly {
 		trace_quicly_int = 1
 	}
+	bindings.TracingOn = trace_quicly
 
 	result := bindings.QuiclyInitializeEngine(is_client_int, proto, certfile, certkey, idle_timeout,
 		uint64(cc_algo), uint64(ss_algo), trace_quicly_int)
