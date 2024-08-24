@@ -3,7 +3,6 @@ package quiclylib
 import "C"
 import (
 	"context"
-	"fmt"
 	"github.com/Project-Faster/quicly-go/internal/bindings"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
@@ -104,7 +103,6 @@ func (s *QServerSession) connectionDelete(id uint64) {
 	s.enterCritical()
 	defer s.exitCritical()
 
-	s.Logger.Debug().Msgf("CONN TO DELETE %d", id)
 	var deleteHash uint64 = 0
 	for hash, handler := range s.connections {
 		if handler.ID() == id {
@@ -113,13 +111,10 @@ func (s *QServerSession) connectionDelete(id uint64) {
 		}
 	}
 	if deleteHash != 0 {
-		delete(s.connections, deleteHash)
 		s.Logger.Debug().Msgf("CONN DELETE %d", id)
+		delete(s.connections, deleteHash)
 		bindings.RemoveConnection(id)
-		return
 	}
-
-	panic(fmt.Sprintf("Connection %d deleted twice!", id))
 }
 
 func (s *QServerSession) connectionInHandler() {
