@@ -74,9 +74,7 @@ func (s *QServerSession) exitCritical() {
 
 func (s *QServerSession) enqueueConnAccept(conn *QServerConnection) {
 	if conn != nil {
-		s.Logger.Info().Msgf(">> Receiving new connection: %v", conn)
 		s.connAcceptQueue <- conn
-		s.Logger.Info().Msgf("<< Received new connection: %v", conn)
 	}
 }
 
@@ -88,13 +86,12 @@ func (s *QServerSession) connectionAdd(addr *net.UDPAddr) *QServerConnection {
 	defer s.exitCritical()
 
 	var targetHandler = s.connections[addrHash]
-
-	if targetHandler == nil {
+	if targetHandler == nil || targetHandler.IsClosed() {
 		targetHandler = &QServerConnection{}
 		targetHandler.init(s, addr, addrHash)
 
 		s.Logger.Debug().Msgf("CONN ADD %d (%v / %v)", targetHandler.ID(), addr, addrHash)
-		s.connections[targetHandler.returnHash] = targetHandler
+		s.connections[addrHash] = targetHandler
 	}
 	return targetHandler
 }
