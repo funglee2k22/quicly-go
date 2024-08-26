@@ -21,7 +21,7 @@ const (
 	QUIC_BLOCK        = 1280
 
 	WRITE_TIMEOUT = 500 * time.Millisecond
-	WRITE_PACING  = 20 * time.Millisecond
+	WRITE_PACING  = 5 * time.Millisecond
 )
 
 type timeoutErrorType struct{}

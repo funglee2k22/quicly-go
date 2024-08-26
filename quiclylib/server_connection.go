@@ -107,6 +107,12 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 }
 
 func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
+	defer func() {
+		_ = recover()
+	}()
+	r.enterCritical(false)
+	defer r.exitCritical(false)
+
 	if !r.started || pkt == nil {
 		return
 	}
