@@ -125,18 +125,13 @@ func (s *QServerSession) connectionInHandler() {
 	}()
 
 	var buffList = make([][]byte, 0, 128)
+	for i := 0; i < 128; i++ {
+		buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
+	}
 
 	runtime.LockOSThread()
 
-	_ = s.NetConn.SetReadBuffer(READ_SIZE * QUIC_BLOCK)
-
 	for {
-		if len(buffList) == 0 {
-			for i := 0; i < 128; i++ {
-				buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
-			}
-		}
-
 		select {
 		case <-s.Ctx.Done():
 			return
@@ -151,7 +146,6 @@ func (s *QServerSession) connectionInHandler() {
 		s.Logger.Debug().Msgf("SESSION %v READ [%v]: %d (%v)", s.id, n, addr, err)
 
 		buf := buffList[0]
-		buffList = buffList[1:]
 
 		pkt := &types.Packet{
 			Data:       buf[:n],
@@ -161,8 +155,12 @@ func (s *QServerSession) connectionInHandler() {
 
 		conn := s.connectionAdd(addr)
 		s.Logger.Debug().Msgf(">> SESSION %v SEND: %d (handler:%v)", s.id, n, conn.id)
+
 		conn.receiveIncomingPacket(pkt)
 		s.Logger.Debug().Msgf("<< SESSION %v SEND [%v]: %d (handler:%v)", s.id, addr, n, conn.id)
+
+		buffList = buffList[1:]
+		buffList = append(buffList, make([]byte, SMALL_BUFFER_SIZE))
 	}
 }
 

@@ -25,6 +25,7 @@ type QServerConnection struct {
 	// unexported fields
 	id         uint64
 	started    bool
+	accepted   bool
 	closing    bool
 	session    *QServerSession
 	returnAddr *net.UDPAddr
@@ -81,6 +82,7 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	}
 
 	r.started = true
+	r.accepted = false
 	r.closing = false
 
 	r.session = session
@@ -96,6 +98,8 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 	r.incomingQueue = make(chan *types.Packet, 4092)
 
 	r.routinesWaiter.Add(2)
+
+	bindings.RegisterConnection(r, r.id)
 
 	go r.connectionProcess()
 	go r.connectionOutgoing()
@@ -125,16 +129,14 @@ func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
 func (r *QServerConnection) handleProcessPacket(pkt *types.Packet) int32 {
 	addr, port := pkt.Address()
 
-	err := bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), bindings.Size_t(r.id))
-
-	if err == errors.QUICLY_OK {
-		bindings.RegisterConnection(r, r.id)
-	}
-
-	return err
+	return bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), bindings.Size_t(r.id))
 }
 
 func (r *QServerConnection) flushOutgoingQueue() int32 {
+	if !r.started {
+		return bindings.QUICLY_ERROR_NOTINITILIZED
+	}
+
 	num_packets := bindings.Size_t(4096)
 	packets_buf := make([]bindings.Iovec, 4096)
 
@@ -154,9 +156,9 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 		break
 	}
 
-	r.NetConn.SetWriteBuffer(READ_SIZE * QUIC_BLOCK)
-
 	r.Logger.Debug().Msgf("CONN flush (%d) %v", num_packets, r.id)
+
+	r.enterCritical(false)
 	for i := 0; i < int(num_packets); i++ {
 		packets_buf[i].Deref() // realize the struct copy from C -> go
 
@@ -167,7 +169,7 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 		n, err := r.NetConn.WriteToUDP(data, r.returnAddr)
 		r.Logger.Debug().Msgf("[%v] WRITE packet %d bytes [%v]", r.id, n, err)
 	}
-	<-time.After(WRITE_PACING)
+	r.exitCritical(false)
 
 	runtime.KeepAlive(num_packets)
 	runtime.KeepAlive(packets_buf)
@@ -198,8 +200,10 @@ func (r *QServerConnection) connectionProcess() {
 			return
 
 		case pkt := <-r.incomingQueue:
-			r.Logger.Debug().Msgf("CONN IN BUFF %v", pkt.DataLen)
-			buffer = append(buffer, pkt)
+			if pkt != nil {
+				r.Logger.Debug().Msgf("CONN IN BUFF %v", pkt.DataLen)
+				buffer = append(buffer, pkt)
+			}
 			break
 
 		case <-time.After(5 * time.Millisecond):
@@ -222,6 +226,7 @@ func (r *QServerConnection) connectionProcess() {
 					r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, ret)
 					break
 				case bindings.QUICLY_OK:
+					r.accepted = true
 					break
 				}
 			}
@@ -245,6 +250,10 @@ func (r *QServerConnection) connectionOutgoing() {
 			debug.PrintStack()
 		}
 	}()
+
+	for !r.accepted {
+		<-time.After(1 * time.Millisecond)
+	}
 
 	r.Logger.Debug().Msgf("CONN OUT START %v", r.id)
 	defer r.Logger.Debug().Msgf("CONN OUT END %v", r.id)
@@ -353,7 +362,6 @@ func (r *QServerConnection) Accept() (types.Stream, error) {
 		case st := <-r.streamAcceptQueue:
 			return st, nil
 		case <-r.Ctx.Done():
-			r.Close()
 			return nil, io.ErrClosedPipe
 		case <-time.After(1 * time.Millisecond):
 			break
@@ -401,10 +409,10 @@ func (r *QServerConnection) Close() error {
 
 		r.routinesWaiter.Wait()
 
+		<-time.After(2 * time.Second) // linger connection
+
 		var ptrId = bindings.Size_t(r.id)
 		var err = bindings.QuiclyClose(ptrId, 0)
-
-		r.flushOutgoingQueue()
 
 		r.session.connectionDelete(r.id)
 

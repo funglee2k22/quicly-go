@@ -18,10 +18,8 @@ var _ types.Stream = &QStream{}
 const (
 	READ_SIZE         = 32 * 1024
 	SMALL_BUFFER_SIZE = 4 * 1024
-	QUIC_BLOCK        = 1280
 
 	WRITE_TIMEOUT = 500 * time.Millisecond
-	WRITE_PACING  = 5 * time.Millisecond
 )
 
 type timeoutErrorType struct{}

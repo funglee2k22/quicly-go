@@ -138,7 +138,7 @@ func (s *QStream) Write(buffWr []byte) (n int, err error) {
 		s.totalWrite += uint64(n)
 	}()
 
-	s.Logger.Debug().Msgf("[%v] SEND packet %d bytes [%v]", s.id, len(buffWr), s.ID())
+	s.Logger.Debug().Msgf("[%v] QSTREAM OUT %d bytes [%v]", s.id, len(buffWr), s.ID())
 	defer s.Logger.Debug().Msgf("[%d] QSTREAM OUT", s.id)
 
 	s.outBufferLock.Lock()
@@ -160,7 +160,7 @@ func (s *QStream) flushToStream() {
 	defer s.Logger.Debug().Msgf("%v quicly flush end", s.session.ID())
 
 	for !s.IsClosed() {
-		<-time.After(10 * time.Millisecond)
+		<-time.After(1 * time.Millisecond)
 
 		if s.streamOutBuf.Len() == 0 {
 			s.Logger.Debug().Msgf("[%v] SEND sync empty (written:%d / sent:%d / acked:%d)", s.id, s.writtenBytes, s.sentBytes, s.ackedBytes)
@@ -168,7 +168,7 @@ func (s *QStream) flushToStream() {
 		}
 
 		s.outBufferLock.Lock()
-		data := make([]byte, 1024*1024)
+		data := make([]byte, 32*1024)
 		buffSize, _ := s.streamOutBuf.Read(data)
 		s.outBufferLock.Unlock()
 
@@ -189,6 +189,7 @@ func (s *QStream) flushToStream() {
 			s.sentBytesCh <- sent
 			s.Logger.Debug().Msgf("[%v] SEND sync (sent:%d)", s.id, sent)
 		} else {
+			s.Logger.Debug().Msgf("[%v] SEND sync (sent:%d)", s.id, buffSize)
 			s.sentBytesCh <- uint64(buffSize)
 		}
 	}

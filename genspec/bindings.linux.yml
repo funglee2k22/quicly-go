@@ -15,7 +15,8 @@ GENERATOR:
       "-ldl" ] }
     - { name: CPPFLAGS, flags: [
       "-DUNIX",
-      "-I<basedir>/internal/deps/include/"
+      "-I<basedir>/internal/deps/include/",
+      "-Wno-format"
     ] }
 
 PARSER:

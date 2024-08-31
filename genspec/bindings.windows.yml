@@ -16,7 +16,8 @@ GENERATOR:
       "-lws2_32" ] }
     - { name: CPPFLAGS, flags: [
       "-DWIN32",
-      "-I<basedir>/internal/deps/include/"
+      "-I<basedir>/internal/deps/include/",
+      "-Wno-format"
     ] }
 
 PARSER:

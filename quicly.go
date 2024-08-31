@@ -45,6 +45,9 @@ func Listen(localAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) typ
 		return nil
 	}
 
+	_ = udpConn.SetReadBuffer(32 * 1280 * 1024)
+	_ = udpConn.SetWriteBuffer(32 * 1280 * 1024)
+
 	conn := &quiclylib.QServerSession{
 		NetConn:   udpConn,
 		Ctx:       ctx,
@@ -62,6 +65,9 @@ func Dial(remoteAddr *net.UDPAddr, cb types.Callbacks, ctx context.Context) type
 		return nil
 	}
 
+	_ = udpConn.SetReadBuffer(32 * 1280 * 1024)
+	_ = udpConn.SetWriteBuffer(32 * 1280 * 1024)
+	
 	conn := &quiclylib.QClientSession{
 		NetConn:   udpConn,
 		Ctx:       ctx,

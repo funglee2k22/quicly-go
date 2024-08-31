@@ -111,7 +111,7 @@ const quicly_context_t quiclygo_context = {NULL,                                
                                               1280,          /* client_initial_size */
                                               { (1024 / 8), 500, 500, 2 },                                /* loss */
                                               {{30 * 1024 * 1472, 30 * 1024 * 1472, 30 * 1024 * 1472}, /* max_stream_data */
-                                               10 * 1024 * 1472,                                    /* max_data */
+                                               30 * 1024 * 1472,                                    /* max_data */
                                                60 * 1000,                                           /* idle_timeout (30 seconds) */
                                                1024, /* max_concurrent_streams_bidi */
                                                0,   /* max_concurrent_streams_uni */

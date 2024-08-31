@@ -17,7 +17,8 @@ GENERATOR:
       "-DDARWIN",
       "-D__APPLE__",
       "-D__MACH__",
-      "-I<basedir>/internal/deps/include/"
+      "-I<basedir>/internal/deps/include/",
+      "-Wno-format"
     ] }
 
 PARSER:

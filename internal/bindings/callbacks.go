@@ -31,6 +31,7 @@ func RegisterConnection(s types.Session, id uint64) {
 
 	for _, st := range connectionsRegistry {
 		if s.ID() == st.ID() {
+			logTraceMessage("skipped add connection id: %d found: %d (%v)\n", id, st.ID(), &s)
 			return
 		}
 	}
