@@ -1,0 +1,158 @@
+name: update-dependencies
+
+on:
+  workflow_dispatch:
+
+run-name: Update Dependencies [${{ github.event_name }}][${{ github.head_ref || github.ref_name }}] rev.${{ github.sha }}
+
+jobs:
+  build-mac-os:
+    if: ${{ !inputs.skip_macos }}
+    runs-on: macos-latest
+    env:
+      GO_VERSION: 1.20.14
+      CMAKE_VERSION: '3.22.x'
+      GOARCH: arm64
+      GOOS: darwin
+      CGO_ENABLED: 1
+      GOPATH: ${{ github.workspace }}/.go
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      IGNORE_PACKAGES: 'tray|docker|docs|version|webgui|workers$'
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v1.14
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+
+      - name: Prepare
+        run: |
+          go clean -cache -x
+
+      - name: Build Backends
+        run: |
+          cd backend/
+          go generate
+
+      - name: Build
+        run: |
+          export CPP=${CXX}
+          export PATH=$GOPATH/bin:$GOPATH/bin/${GOOS}_${GOARCH}:$PATH
+          go generate
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: gen_windows_b${{ github.run_id }}
+          path: internal/darwin/arm64/*
+
+  build-linux:
+    if: ${{ !inputs.skip_linux }}
+    runs-on: ubuntu-latest
+    env:
+      GO_VERSION: 1.20.14
+      CMAKE_VERSION: '3.22.x'
+      GOARCH: amd64
+      GOOS: linux
+      CGO_ENABLED: 1
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      IGNORE_PACKAGES: 'tray|docker|docs|version|webgui|workers$'
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v1.14
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+
+      - name: Prepare
+        run: |
+          go clean -cache -x
+
+      - name: Build
+        run: |
+          go generate
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: gen_windows_b${{ github.run_id }}
+          path: internal/linux/amd64/*
+
+  build-windows:
+    runs-on: windows-latest
+    env:
+      GO_VERSION: 1.20.14
+      CMAKE_VERSION: '3.22.x'
+      MINGW_VERSION: 11.1.0
+      MINGW_ARCH: x64
+      GOARCH: amd64
+      GOOS: windows
+      CGO_ENABLED: 1
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      MINGW_BASEDIR: 'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          static: true
+          platform: ${{ env.MINGW_ARCH }}
+          version: ${{ env.MINGW_VERSION }}
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v1.14
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+
+      - name: Prepare
+        run: |
+          go clean -cache -x
+
+      - name: Build
+        run: |
+          go generate
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: gen_windows_b${{ github.run_id }}
+          path: internal/windows/amd64/*
