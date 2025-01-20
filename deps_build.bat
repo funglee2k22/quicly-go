@@ -9,6 +9,16 @@ echo.
 set BASEDIR=%~dp0
 echo %BASEDIR%
 
+go env GOOS > tmpfile
+set /p GOOS= < tmpfile
+
+go env GOARCH > tmpfile
+set /p GOARCH= < tmpfile
+del tmpfile
+
+echo [%GOOS%]
+echo [%GOARCH%]
+
 set /A BUILD="Release"
 
 if "%1" EQU "--quic" (
@@ -57,7 +67,7 @@ mkdir gen_quicly
 
 echo [Build OpenSSL]
 pushd gen_openssl
-cmake ../deps/openssl -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/deps -DCMAKE_BUILD_TYPE=%BUILD%
+cmake ../deps/openssl -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/%GOOS%/%GOARCH%/bindings -DCMAKE_BUILD_TYPE=%BUILD%
 if %ERRORLEVEL% NEQ 0 goto fail
 
 cmake --build .
@@ -70,7 +80,7 @@ popd
 :quic
 echo [Build Quicly]
 pushd gen_quicly
-cmake ../deps/quicly -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/deps -DOPENSSL_ROOT_DIR=%BASEDIR%/internal/deps/include ^
+cmake ../deps/quicly -G"MinGW Makefiles" -DCMAKE_INSTALL_PREFIX=%BASEDIR%/internal/%GOOS%/%GOARCH%/bindings -DOPENSSL_ROOT_DIR=%BASEDIR%/%GOOS%/%GOARCH%/bindings/include ^
                                          -DCMAKE_BUILD_TYPE=%BUILD% -DWITH_EXAMPLE=OFF -DCMAKE_VERBOSE_MAKEFILE=ON
 if %ERRORLEVEL% NEQ 0 goto fail
 

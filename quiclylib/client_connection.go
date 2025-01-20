@@ -3,7 +3,7 @@ package quiclylib
 import "C"
 import (
 	"context"
-	"github.com/Project-Faster/quicly-go/internal/bindings"
+	"github.com/Project-Faster/quicly-go/internal"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
@@ -81,15 +81,13 @@ func (s *QClientSession) connect() int {
 
 	s.init()
 
-	ptrId := bindings.Size_t(s.id)
-
 	udpAddr := s.Addr().(*net.UDPAddr)
 
-	if ret := bindings.QuiclyConnect(udpAddr.IP.String(), int32(udpAddr.Port), ptrId); ret != errors.QUICLY_OK {
+	if ret := QuiclyConnect(udpAddr.IP.String(), int32(udpAddr.Port), s.id); ret != errors.QUICLY_OK {
 		return int(ret)
 	}
 
-	bindings.RegisterConnection(s, s.id)
+	internal.RegisterConnection(s, s.id)
 
 	s.connected = true
 	s.closing = false
@@ -204,9 +202,9 @@ func (s *QClientSession) connectionProcessHandler() {
 					addr, port = returnAddr.IP.String(), returnAddr.Port
 				}
 
-				err := bindings.QuiclyProcessMsg(int32(1), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), bindings.Size_t(s.id))
-				if err != bindings.QUICLY_OK {
-					if err == bindings.QUICLY_ERROR_PACKET_IGNORED {
+				err := QuiclyProcessMsg(int32(1), addr, int32(port), pkt.Data, uint64(pkt.DataLen), s.id)
+				if err != errors.QUICLY_OK {
+					if err == errors.QUICLY_ERROR_PACKET_IGNORED {
 						s.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", s.id, pkt.DataLen, err)
 					} else {
 						s.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", s.id, pkt.DataLen, err)
@@ -224,23 +222,23 @@ func (s *QClientSession) connectionProcessHandler() {
 }
 
 func (s *QClientSession) flushOutgoingQueue() int32 {
-	num_packets := bindings.Size_t(4096)
-	packets_buf := make([]bindings.Iovec, 4096)
+	num_packets := uint64(4096)
+	packets_buf := make([]Iovec, 4096)
 
-	var ret = bindings.QuiclyOutgoingMsgQueue(bindings.Size_t(s.id), packets_buf, &num_packets)
+	var ret = QuiclyOutgoingMsgQueue(s.id, packets_buf, &num_packets)
 	if int(num_packets) == 0 {
 		s.Logger.Debug().Msgf("QUICLY flushOutgoingQueue %d: 0", s.id)
 		return ret
 	}
 
 	switch ret {
-	case bindings.QUICLY_ERROR_NOT_OPEN:
-		s.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN")
+	case errors.QUICLY_ERROR_NOT_OPEN:
+		s.Logger.Error().Msgf("QUICLY Send failed: errors.QUICLY_ERROR_NOT_OPEN")
 		return ret
 	default:
 		s.Logger.Debug().Msgf("QUICLY Send failed: %d - %v", num_packets, ret)
 		return ret
-	case bindings.QUICLY_OK:
+	case errors.QUICLY_OK:
 		break
 	}
 
@@ -250,7 +248,7 @@ func (s *QClientSession) flushOutgoingQueue() int32 {
 	for i := 0; i < int(num_packets); i++ {
 		packets_buf[i].Deref() // realize the struct copy from C -> go
 
-		data := bindings.IovecToBytes(packets_buf[i])
+		data := IovecToBytes(packets_buf[i])
 
 		_ = s.NetConn.SetWriteDeadline(time.Now().Add(WRITE_TIMEOUT))
 
@@ -280,10 +278,9 @@ func (s *QClientSession) OpenStream() types.Stream {
 	}
 	s.exitCritical(false)
 
-	var streamId bindings.Size_t = 0
-	connId := bindings.Size_t(s.id)
+	var streamId uint64 = 0
 
-	if ret := bindings.QuiclyOpenStream(connId, &streamId); ret != errors.QUICLY_OK {
+	if ret := QuiclyOpenStream(s.id, &streamId); ret != errors.QUICLY_OK {
 		s.Logger.Debug().Msgf("open stream err")
 		return nil
 	}
@@ -291,7 +288,7 @@ func (s *QClientSession) OpenStream() types.Stream {
 	st := &QStream{
 		session: s,
 		conn:    s.NetConn,
-		id:      uint64(streamId),
+		id:      streamId,
 		Logger:  s.Logger,
 	}
 	st.init()
@@ -424,10 +421,9 @@ func (s *QClientSession) Close() error {
 		s.Logger.Debug().Msgf(">> Wait routines %d(%v)", s.id, s.id)
 		s.handlersWaiter.Wait()
 
-		var connId = bindings.Size_t(s.id)
-		var err = bindings.QuiclyClose(connId, 0)
+		var err = QuiclyClose(s.id, 0)
 
-		bindings.RemoveConnection(s.id)
+		internal.RemoveConnection(s.id)
 		s.Logger.Debug().Msgf(">> Quicly Close %d: %v", s.id, err)
 	}()
 

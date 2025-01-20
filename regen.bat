@@ -7,6 +7,15 @@ echo **************************************
 echo.
 
 set BASEDIR=%~dp0
+go env GOOS > tmpfile
+set /p GOOS= < tmpfile
+
+go env GOARCH > tmpfile
+set /p GOARCH= < tmpfile
+del tmpfile
+
+echo [%GOOS%]
+echo [%GOARCH%]
 
 ECHO [Prerequisites check: C_FOR_GO]
 c-for-go.exe -h
@@ -24,7 +33,7 @@ c-for-go.exe -nostamp -nocgo -debug -path %BASEDIR% -out quiclylib genspec\error
 if %ERRORLEVEL% NEQ 0 goto fail
 
 echo [Regen Quicly Bindings package]
-c-for-go.exe -nostamp -debug -path %BASEDIR% -out internal genspec\bindings.windows.yml
+c-for-go.exe -nostamp -debug -path %BASEDIR% -out internal\%GOOS%\%GOARCH% genspec\bindings.windows.yml
 if %ERRORLEVEL% NEQ 0 goto fail
 
 :ok

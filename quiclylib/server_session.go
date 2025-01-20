@@ -3,7 +3,7 @@ package quiclylib
 import "C"
 import (
 	"context"
-	"github.com/Project-Faster/quicly-go/internal/bindings"
+	"github.com/Project-Faster/quicly-go/internal"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"hash/fnv"
@@ -110,7 +110,7 @@ func (s *QServerSession) connectionDelete(id uint64) {
 	if deleteHash != 0 {
 		s.Logger.Debug().Msgf("CONN DELETE %d", id)
 		delete(s.connections, deleteHash)
-		bindings.RemoveConnection(id)
+		internal.RemoveConnection(id)
 	}
 }
 

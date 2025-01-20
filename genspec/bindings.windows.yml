@@ -8,15 +8,18 @@ GENERATOR:
     ConstCharIsString: true
   FlagGroups:
     - { name: LDFLAGS, flags: [
-      "<basedir>/internal/deps/lib/libquicly.a",
-      "<basedir>/internal/deps/lib/libcrypto.a",
-      "<basedir>/internal/deps/lib/libssl.a",
+      "-Llib/",
+      "-l:libquicly.a",
+      "-l:libcrypto.a",
+      "-l:libssl.a",
       "-lm",
       "-lmswsock",
       "-lws2_32" ] }
     - { name: CPPFLAGS, flags: [
       "-DWIN32",
-      "-I<basedir>/internal/deps/include/",
+      "-I../../../",
+      "-Iinclude/",
+      "-Iinclude/quicly/",
       "-Wno-format"
     ] }
 
@@ -27,7 +30,9 @@ PARSER:
     _WINDOWS: 1
     WIN32_LEAN_AND_MEAN: 1
   IncludePaths: [
-    "<basedir>/internal/deps/include/" ]
+    "internal/",
+    "internal/windows/amd64/bindings/include/",
+  ]
   SourcesPaths: [
     "quicly.h",
     "quicly_wrapper.h",

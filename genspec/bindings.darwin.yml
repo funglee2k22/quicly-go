@@ -8,16 +8,19 @@ GENERATOR:
     ConstCharIsString: true
   FlagGroups:
     - { name: LDFLAGS, flags: [
-      "<basedir>/internal/deps/lib/libquicly.a",
-      "<basedir>/internal/deps/lib/libcrypto.a",
-      "<basedir>/internal/deps/lib/libssl.a",
+      "-Llib/",
+      "-lquicly",
+      "-lcrypto",
+      "-lssl",
       "-lm",
       "-ldl" ] }
     - { name: CPPFLAGS, flags: [
       "-DDARWIN",
       "-D__APPLE__",
       "-D__MACH__",
-      "-I<basedir>/internal/deps/include/",
+      "-I../../../",
+      "-Iinclude/",
+      "-Iinclude/quicly/",
       "-Wno-format"
     ] }
 
@@ -27,7 +30,8 @@ PARSER:
     __APPLE__: 1
     __MACH__: 1
   IncludePaths: [
-    "<basedir>/internal/deps/include/"
+    "internal/",
+    "internal/darwin/arm64/bindings/include/",
   ]
   SourcesPaths: [
     "quicly.h",

@@ -45,7 +45,7 @@ function prepare() {
 function build_openssl() {
   echo [Build OpenSSL]
   pushd gen_openssl
-  cmake ../deps/openssl -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DCMAKE_BUILD_TYPE=$BUILD
+  cmake ../deps/openssl -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/$GOOS/$GOARCH/bindings -DCMAKE_BUILD_TYPE=$BUILD
   assert_errorcode
 
   cmake --build .
@@ -59,7 +59,7 @@ function build_openssl() {
 function build_quicly() {
   echo [Build Quicly]
   pushd gen_quicly
-  cmake ../deps/quicly -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/deps -DOPENSSL_ROOT_DIR=$BASEDIR/internal/deps/include \
+  cmake ../deps/quicly -G"Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$BASEDIR/internal/$GOOS/$GOARCH/bindings -DOPENSSL_ROOT_DIR=$BASEDIR/internal/$GOOS/$GOARCH/bindings/include \
                                            -DCMAKE_BUILD_TYPE=$BUILD -DWITH_EXAMPLE=OFF
   assert_errorcode
 
@@ -108,6 +108,9 @@ fi
 
 prerequisites_check
 assert_errorcode
+
+GOOS=$(go env GOOS)
+GOARCH=$(go env GOARCH)
 
 prepare
 assert_errorcode

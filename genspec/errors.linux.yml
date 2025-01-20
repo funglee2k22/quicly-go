@@ -5,16 +5,20 @@ GENERATOR:
   Includes: [ "quicly_wrapper.h" ]
   FlagGroups:
     - { name: CPPFLAGS, flags: [
-      "-I<basedir>/internal/deps/include/"
+      "-Iinternal/",
+      "-Iinternal/linux/amd64/bindings/include/",
     ] }
 
 PARSER:
   Defines:
     UNIX: 1
   IncludePaths: [
-    "<basedir>/internal/deps/include/" ]
+    "internal/",
+    "internal/linux/amd64/bindings/include/",
+  ]
   SourcesPaths: [
     "quicly_wrapper.h",
+    "quicly/constants.h"
   ]
 
 TRANSLATOR:

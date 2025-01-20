@@ -2,7 +2,7 @@ package quiclylib
 
 import (
 	"context"
-	"github.com/Project-Faster/quicly-go/internal/bindings"
+	"github.com/Project-Faster/quicly-go/internal"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	"io"
@@ -99,7 +99,7 @@ func (r *QServerConnection) init(session *QServerSession, addr *net.UDPAddr, add
 
 	r.routinesWaiter.Add(2)
 
-	bindings.RegisterConnection(r, r.id)
+	internal.RegisterConnection(r, r.id)
 
 	go r.connectionProcess()
 	go r.connectionOutgoing()
@@ -129,30 +129,30 @@ func (r *QServerConnection) receiveIncomingPacket(pkt *types.Packet) {
 func (r *QServerConnection) handleProcessPacket(pkt *types.Packet) int32 {
 	addr, port := pkt.Address()
 
-	return bindings.QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, bindings.Size_t(pkt.DataLen), bindings.Size_t(r.id))
+	return QuiclyProcessMsg(int32(0), addr, int32(port), pkt.Data, uint64(pkt.DataLen), r.id)
 }
 
 func (r *QServerConnection) flushOutgoingQueue() int32 {
 	if !r.started {
-		return bindings.QUICLY_ERROR_NOTINITILIZED
+		return errors.QUICLY_ERROR_NOTINITILIZED
 	}
 
-	num_packets := bindings.Size_t(4096)
-	packets_buf := make([]bindings.Iovec, 4096)
+	num_packets := uint64(4096)
+	packets_buf := make([]Iovec, 4096)
 
-	connId := bindings.Size_t(r.id)
+	connId := r.id
 
-	var ret = bindings.QuiclyOutgoingMsgQueue(connId, packets_buf, &num_packets)
+	var ret = QuiclyOutgoingMsgQueue(connId, packets_buf, &num_packets)
 	if int(num_packets) == 0 {
 		r.Logger.Debug().Msgf("QUICLY flushOutgoingQueue %d: 0", connId)
-		return bindings.QUICLY_OK
+		return errors.QUICLY_OK
 	}
 
 	switch ret {
 	default:
 		r.Logger.Debug().Msgf("QUICLY flushOutgoingQueue failed: %v", ret)
 		return ret
-	case bindings.QUICLY_OK:
+	case errors.QUICLY_OK:
 		break
 	}
 
@@ -162,7 +162,7 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 	for i := 0; i < int(num_packets); i++ {
 		packets_buf[i].Deref() // realize the struct copy from C -> go
 
-		data := bindings.IovecToBytes(packets_buf[i])
+		data := IovecToBytes(packets_buf[i])
 
 		_ = r.NetConn.SetWriteDeadline(time.Now().Add(WRITE_TIMEOUT))
 
@@ -174,7 +174,7 @@ func (r *QServerConnection) flushOutgoingQueue() int32 {
 	runtime.KeepAlive(num_packets)
 	runtime.KeepAlive(packets_buf)
 
-	return bindings.QUICLY_OK
+	return errors.QUICLY_OK
 }
 
 // --- Handlers routines --- //
@@ -216,16 +216,16 @@ func (r *QServerConnection) connectionProcess() {
 
 				ret := r.handleProcessPacket(pkt)
 				switch ret {
-				case bindings.QUICLY_ERROR_NOT_OPEN:
-					r.Logger.Error().Msgf("QUICLY Send failed: QUICLY_ERROR_NOT_OPEN")
+				case errors.QUICLY_ERROR_NOT_OPEN:
+					r.Logger.Error().Msgf("QUICLY Send failed: errors.QUICLY_ERROR_NOT_OPEN")
 					return
-				case bindings.QUICLY_ERROR_PACKET_IGNORED:
+				case errors.QUICLY_ERROR_PACKET_IGNORED:
 					r.Logger.Error().Msgf("[%v] Process error %d bytes (ignored processing %v)", r.id, pkt.DataLen, ret)
 					continue
 				default:
 					r.Logger.Error().Msgf("[%v] Received %d bytes (failed processing %v)", r.id, pkt.DataLen, ret)
 					break
-				case bindings.QUICLY_OK:
+				case errors.QUICLY_OK:
 					r.accepted = true
 					break
 				}
@@ -272,12 +272,12 @@ func (r *QServerConnection) connectionOutgoing() {
 		switch ret {
 		default:
 			continue
-		case bindings.QUICLY_ERROR_NOT_OPEN:
+		case errors.QUICLY_ERROR_NOT_OPEN:
 			fallthrough
-		case bindings.QUICLY_ERROR_DESTINATION_NOT_FOUND:
+		case errors.QUICLY_ERROR_DESTINATION_NOT_FOUND:
 			r.Logger.Error().Msgf("QUICLY Send failed: %v", ret)
 			return
-		case bindings.QUICLY_OK:
+		case errors.QUICLY_OK:
 			break
 		}
 	}
@@ -411,8 +411,8 @@ func (r *QServerConnection) Close() error {
 
 		<-time.After(2 * time.Second) // linger connection
 
-		var ptrId = bindings.Size_t(r.id)
-		var err = bindings.QuiclyClose(ptrId, 0)
+		var ptrId = r.id
+		var err = QuiclyClose(ptrId, 0)
 
 		r.session.connectionDelete(r.id)
 

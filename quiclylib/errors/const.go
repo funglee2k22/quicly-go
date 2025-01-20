@@ -6,55 +6,174 @@
 package errors
 
 const (
-// QUICLY_WRAPPER as defined in include/quicly_wrapper.h:3
+	// QUICLY_WRAPPER as defined in internal/quicly_wrapper.h:3
+
+	// QUICLY_DELAYED_ACK_TIMEOUT as defined in quicly/constants.h:33
+	QUICLY_DELAYED_ACK_TIMEOUT = 25
+	// QUICLY_DEFAULT_MAX_ACK_DELAY as defined in quicly/constants.h:34
+	QUICLY_DEFAULT_MAX_ACK_DELAY = 25
+	// QUICLY_LOCAL_MAX_ACK_DELAY as defined in quicly/constants.h:35
+	QUICLY_LOCAL_MAX_ACK_DELAY = 25
+	// QUICLY_DEFAULT_ACK_DELAY_EXPONENT as defined in quicly/constants.h:36
+	QUICLY_DEFAULT_ACK_DELAY_EXPONENT = 3
+	// QUICLY_LOCAL_ACK_DELAY_EXPONENT as defined in quicly/constants.h:37
+	QUICLY_LOCAL_ACK_DELAY_EXPONENT = 10
+	// QUICLY_MIN_INITIAL_DCID_LEN as defined in quicly/constants.h:38
+	QUICLY_MIN_INITIAL_DCID_LEN = 8
+	// QUICLY_DEFAULT_ACTIVE_CONNECTION_ID_LIMIT as defined in quicly/constants.h:39
+	QUICLY_DEFAULT_ACTIVE_CONNECTION_ID_LIMIT = 2
+	// QUICLY_LOCAL_ACTIVE_CONNECTION_ID_LIMIT as defined in quicly/constants.h:46
+	QUICLY_LOCAL_ACTIVE_CONNECTION_ID_LIMIT = 4
+	// QUICLY_MIN_ACTIVE_CONNECTION_ID_LIMIT as defined in quicly/constants.h:47
+	QUICLY_MIN_ACTIVE_CONNECTION_ID_LIMIT = 2
+	// QUICLY_DEFAULT_MAX_UDP_PAYLOAD_SIZE as defined in quicly/constants.h:48
+	QUICLY_DEFAULT_MAX_UDP_PAYLOAD_SIZE = 65527
+	// QUICLY_MIN_CLIENT_INITIAL_SIZE as defined in quicly/constants.h:49
+	QUICLY_MIN_CLIENT_INITIAL_SIZE = 1200
+	// QUICLY_DEFAULT_MIN_PTO as defined in quicly/constants.h:50
+	QUICLY_DEFAULT_MIN_PTO = 1
+	// QUICLY_DEFAULT_INITIAL_RTT as defined in quicly/constants.h:51
+	QUICLY_DEFAULT_INITIAL_RTT = 66
+	// QUICLY_LOSS_DEFAULT_PACKET_THRESHOLD as defined in quicly/constants.h:52
+	QUICLY_LOSS_DEFAULT_PACKET_THRESHOLD = 3
+	// QUICLY_MIN_MTU as defined in quicly/constants.h:53
+	QUICLY_MIN_MTU = 1200
+	// QUICLY_MAX_MTU as defined in quicly/constants.h:54
+	QUICLY_MAX_MTU = 4096
+	// QUICLY_DEFAULT_PACKET_TOLERANCE as defined in quicly/constants.h:56
+	QUICLY_DEFAULT_PACKET_TOLERANCE = 2
+	// QUICLY_MAX_PACKET_TOLERANCE as defined in quicly/constants.h:57
+	QUICLY_MAX_PACKET_TOLERANCE = 10
+	// QUICLY_FIRST_ACK_FREQUENCY_LOSS_EPISODE as defined in quicly/constants.h:58
+	QUICLY_FIRST_ACK_FREQUENCY_LOSS_EPISODE = 4
+	// QUICLY_AEAD_TAG_SIZE as defined in quicly/constants.h:60
+	QUICLY_AEAD_TAG_SIZE = 16
+	// QUICLY_MAX_CID_LEN_V1 as defined in quicly/constants.h:62
+	QUICLY_MAX_CID_LEN_V1 = 20
+	// QUICLY_STATELESS_RESET_TOKEN_LEN as defined in quicly/constants.h:63
+	QUICLY_STATELESS_RESET_TOKEN_LEN = 16
+	// QUICLY_EPOCH_INITIAL as defined in quicly/constants.h:65
+	QUICLY_EPOCH_INITIAL = 0
+	// QUICLY_EPOCH_0RTT as defined in quicly/constants.h:66
+	QUICLY_EPOCH_0RTT = 1
+	// QUICLY_EPOCH_HANDSHAKE as defined in quicly/constants.h:67
+	QUICLY_EPOCH_HANDSHAKE = 2
+	// QUICLY_EPOCH_1RTT as defined in quicly/constants.h:68
+	QUICLY_EPOCH_1RTT = 3
+	// QUICLY_NUM_EPOCHS as defined in quicly/constants.h:69
+	QUICLY_NUM_EPOCHS = 4
+	// QUICLY_TRANSPORT_ERROR_NONE as defined in quicly/constants.h:85
+	QUICLY_TRANSPORT_ERROR_NONE = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_INTERNAL as defined in quicly/constants.h:86
+	QUICLY_TRANSPORT_ERROR_INTERNAL = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_CONNECTION_REFUSED as defined in quicly/constants.h:87
+	QUICLY_TRANSPORT_ERROR_CONNECTION_REFUSED = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_FLOW_CONTROL as defined in quicly/constants.h:88
+	QUICLY_TRANSPORT_ERROR_FLOW_CONTROL = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_STREAM_LIMIT as defined in quicly/constants.h:89
+	QUICLY_TRANSPORT_ERROR_STREAM_LIMIT = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_STREAM_STATE as defined in quicly/constants.h:90
+	QUICLY_TRANSPORT_ERROR_STREAM_STATE = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_FINAL_SIZE as defined in quicly/constants.h:91
+	QUICLY_TRANSPORT_ERROR_FINAL_SIZE = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_FRAME_ENCODING as defined in quicly/constants.h:92
+	QUICLY_TRANSPORT_ERROR_FRAME_ENCODING = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_TRANSPORT_PARAMETER as defined in quicly/constants.h:93
+	QUICLY_TRANSPORT_ERROR_TRANSPORT_PARAMETER = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_CONNECTION_ID_LIMIT as defined in quicly/constants.h:94
+	QUICLY_TRANSPORT_ERROR_CONNECTION_ID_LIMIT = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_PROTOCOL_VIOLATION as defined in quicly/constants.h:95
+	QUICLY_TRANSPORT_ERROR_PROTOCOL_VIOLATION = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_INVALID_TOKEN as defined in quicly/constants.h:96
+	QUICLY_TRANSPORT_ERROR_INVALID_TOKEN = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_APPLICATION as defined in quicly/constants.h:97
+	QUICLY_TRANSPORT_ERROR_APPLICATION = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_CRYPTO_BUFFER_EXCEEDED as defined in quicly/constants.h:98
+	QUICLY_TRANSPORT_ERROR_CRYPTO_BUFFER_EXCEEDED = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_KEY_UPDATE as defined in quicly/constants.h:99
+	QUICLY_TRANSPORT_ERROR_KEY_UPDATE = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_AEAD_LIMIT_REACHED as defined in quicly/constants.h:100
+	QUICLY_TRANSPORT_ERROR_AEAD_LIMIT_REACHED = 0x567ac0
+	// QUICLY_TRANSPORT_ERROR_TLS_ALERT_BASE as defined in quicly/constants.h:101
+	QUICLY_TRANSPORT_ERROR_TLS_ALERT_BASE = 0x567ac0
+	// QUICLY_ERROR_PACKET_IGNORED as defined in quicly/constants.h:104
+	QUICLY_ERROR_PACKET_IGNORED = 0xff01
+	// QUICLY_ERROR_SENDBUF_FULL as defined in quicly/constants.h:105
+	QUICLY_ERROR_SENDBUF_FULL = 0xff02
+	// QUICLY_ERROR_FREE_CONNECTION as defined in quicly/constants.h:106
+	QUICLY_ERROR_FREE_CONNECTION = 0xff03
+	// QUICLY_ERROR_RECEIVED_STATELESS_RESET as defined in quicly/constants.h:107
+	QUICLY_ERROR_RECEIVED_STATELESS_RESET = 0xff04
+	// QUICLY_ERROR_NO_COMPATIBLE_VERSION as defined in quicly/constants.h:108
+	QUICLY_ERROR_NO_COMPATIBLE_VERSION = 0xff05
+	// QUICLY_ERROR_IS_CLOSING as defined in quicly/constants.h:109
+	QUICLY_ERROR_IS_CLOSING = 0xff06
+	// QUICLY_ERROR_STATE_EXHAUSTION as defined in quicly/constants.h:110
+	QUICLY_ERROR_STATE_EXHAUSTION = 0xff07
+	// QUICLY_ERROR_INVALID_INITIAL_VERSION as defined in quicly/constants.h:111
+	QUICLY_ERROR_INVALID_INITIAL_VERSION = 0xff08
+	// QUICLY_ERROR_DECRYPTION_FAILED as defined in quicly/constants.h:112
+	QUICLY_ERROR_DECRYPTION_FAILED = 0xff09
+
+// QUICLY_WINCOMPAT_H as defined in include/wincompat.h:3
 
 )
 
+const ()
+
+const ()
+
+const ()
+
+const ()
+
+const ()
+
 const (
-	// QUICLY_OK as declared in include/quicly_wrapper.h:11
+	// QUICLY_OK as declared in internal/quicly_wrapper.h:16
 	QUICLY_OK = iota
-	// QUICLY_ERROR_NOTINITILIZED as declared in include/quicly_wrapper.h:12
+	// QUICLY_ERROR_NOTINITILIZED as declared in internal/quicly_wrapper.h:17
 	QUICLY_ERROR_NOTINITILIZED = 1
-	// QUICLY_ERROR_ALREADY_INIT as declared in include/quicly_wrapper.h:13
+	// QUICLY_ERROR_ALREADY_INIT as declared in internal/quicly_wrapper.h:18
 	QUICLY_ERROR_ALREADY_INIT = 2
-	// QUICLY_ERROR_FAILED as declared in include/quicly_wrapper.h:14
+	// QUICLY_ERROR_FAILED as declared in internal/quicly_wrapper.h:19
 	QUICLY_ERROR_FAILED = 3
-	// QUICLY_ERROR_CERT_LOAD_FAILED as declared in include/quicly_wrapper.h:15
+	// QUICLY_ERROR_CERT_LOAD_FAILED as declared in internal/quicly_wrapper.h:20
 	QUICLY_ERROR_CERT_LOAD_FAILED = 4
-	// QUICLY_ERROR_DECODE_FAILED as declared in include/quicly_wrapper.h:16
+	// QUICLY_ERROR_DECODE_FAILED as declared in internal/quicly_wrapper.h:21
 	QUICLY_ERROR_DECODE_FAILED = 5
-	// QUICLY_ERROR_DESTINATION_NOT_FOUND as declared in include/quicly_wrapper.h:17
+	// QUICLY_ERROR_DESTINATION_NOT_FOUND as declared in internal/quicly_wrapper.h:22
 	QUICLY_ERROR_DESTINATION_NOT_FOUND = 6
-	// QUICLY_ERROR_NOT_OPEN as declared in include/quicly_wrapper.h:18
+	// QUICLY_ERROR_NOT_OPEN as declared in internal/quicly_wrapper.h:23
 	QUICLY_ERROR_NOT_OPEN = 7
-	// QUICLY_ERROR_STREAM_NOT_FOUND as declared in include/quicly_wrapper.h:19
+	// QUICLY_ERROR_STREAM_NOT_FOUND as declared in internal/quicly_wrapper.h:24
 	QUICLY_ERROR_STREAM_NOT_FOUND = 8
-	// QUICLY_ERROR_UNKNOWN_CC_ALGO as declared in include/quicly_wrapper.h:20
+	// QUICLY_ERROR_UNKNOWN_CC_ALGO as declared in internal/quicly_wrapper.h:25
 	QUICLY_ERROR_UNKNOWN_CC_ALGO = 9
-	// QUICLY_ERROR_CANNOT_SEND as declared in include/quicly_wrapper.h:21
+	// QUICLY_ERROR_CANNOT_SEND as declared in internal/quicly_wrapper.h:26
 	QUICLY_ERROR_CANNOT_SEND = 10
-	// QUICLY_ERROR_STREAM_BUSY as declared in include/quicly_wrapper.h:22
+	// QUICLY_ERROR_STREAM_BUSY as declared in internal/quicly_wrapper.h:27
 	QUICLY_ERROR_STREAM_BUSY = 11
 )
 
 const (
-	// QUICLY_CC_RENO as declared in include/quicly_wrapper.h:26
+	// QUICLY_CC_RENO as declared in internal/quicly_wrapper.h:31
 	QUICLY_CC_RENO = iota
-	// QUICLY_CC_CUBIC as declared in include/quicly_wrapper.h:27
+	// QUICLY_CC_CUBIC as declared in internal/quicly_wrapper.h:32
 	QUICLY_CC_CUBIC = 1
-	// QUICLY_CC_PICO as declared in include/quicly_wrapper.h:28
+	// QUICLY_CC_PICO as declared in internal/quicly_wrapper.h:33
 	QUICLY_CC_PICO = 2
-	// QUICLY_CC_LAST as declared in include/quicly_wrapper.h:29
+	// QUICLY_CC_LAST as declared in internal/quicly_wrapper.h:34
 	QUICLY_CC_LAST = 3
 )
 
 const (
-	// QUICLY_SS_RFC2001 as declared in include/quicly_wrapper.h:33
+	// QUICLY_SS_RFC2001 as declared in internal/quicly_wrapper.h:38
 	QUICLY_SS_RFC2001 = iota
-	// QUICLY_SS_DISABLED as declared in include/quicly_wrapper.h:34
+	// QUICLY_SS_DISABLED as declared in internal/quicly_wrapper.h:39
 	QUICLY_SS_DISABLED = 1
-	// QUICLY_SS_SEARCH as declared in include/quicly_wrapper.h:35
+	// QUICLY_SS_SEARCH as declared in internal/quicly_wrapper.h:40
 	QUICLY_SS_SEARCH = 2
-	// QUICLY_SS_LAST as declared in include/quicly_wrapper.h:36
+	// QUICLY_SS_LAST as declared in internal/quicly_wrapper.h:41
 	QUICLY_SS_LAST = 3
 )

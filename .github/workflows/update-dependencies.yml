@@ -7,7 +7,6 @@ run-name: Update Dependencies [${{ github.event_name }}][${{ github.head_ref || 
 
 jobs:
   build-mac-os:
-    if: ${{ !inputs.skip_macos }}
     runs-on: macos-latest
     env:
       GO_VERSION: 1.20.14
@@ -17,7 +16,6 @@ jobs:
       CGO_ENABLED: 1
       GOPATH: ${{ github.workspace }}/.go
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      IGNORE_PACKAGES: 'tray|docker|docs|version|webgui|workers$'
     defaults:
       run:
         shell: bash
@@ -42,25 +40,27 @@ jobs:
         run: |
           go clean -cache -x
 
-      - name: Build Backends
-        run: |
-          cd backend/
-          go generate
-
       - name: Build
         run: |
           export CPP=${CXX}
           export PATH=$GOPATH/bin:$GOPATH/bin/${GOOS}_${GOARCH}:$PATH
           go generate
 
+      - name: Remove unnecessary files
+        run: |
+          pushd internal/darwin/arm64/bindings/
+          rm -rf bin/ 
+          rm -rf share/ 
+          rm -rf ssl/
+          popd
+
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always()
         with:
-          name: gen_windows_b${{ github.run_id }}
+          name: gen_darwin_${{ github.sha }}
           path: internal/darwin/arm64/*
 
   build-linux:
-    if: ${{ !inputs.skip_linux }}
     runs-on: ubuntu-latest
     env:
       GO_VERSION: 1.20.14
@@ -69,7 +69,6 @@ jobs:
       GOOS: linux
       CGO_ENABLED: 1
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      IGNORE_PACKAGES: 'tray|docker|docs|version|webgui|workers$'
     defaults:
       run:
         shell: bash
@@ -98,10 +97,18 @@ jobs:
         run: |
           go generate
 
+      - name: Remove unnecessary files
+        run: |
+          pushd internal/linux/amd64/bindings/
+          rm -rf bin/ 
+          rm -rf share/ 
+          rm -rf ssl/
+          popd
+
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always()
         with:
-          name: gen_windows_b${{ github.run_id }}
+          name: gen_linux_${{ github.sha }}
           path: internal/linux/amd64/*
 
   build-windows:
@@ -151,8 +158,55 @@ jobs:
         run: |
           go generate
 
+      - name: Remove unnecessary files
+        run: |
+          cd internal/windows/amd64/bindings/
+          rd /q /s bin
+          rd /q /s share
+          rd /q /s ssl
+
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always()
         with:
-          name: gen_windows_b${{ github.run_id }}
+          name: gen_windows_${{ github.sha }}
           path: internal/windows/amd64/*
+
+  update:
+    needs: [ build-windows, build-linux, build-mac-os ]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          submodules: true
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gen_windows_${{ github.sha }}
+          path: internal/windows/amd64/
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gen_linux_${{ github.sha }}
+          path: internal/linux/amd64/
+
+      - name: Download MacOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gen_darwin_${{ github.sha }}
+          path: internal/darwin/arm64/
+
+      - uses: EndBug/add-and-commit@v9
+        with:
+          default_author: github_actions
+          message: Update dependencies
+          add: |
+            - internal/windows/amd64/bindings/*
+            - internal/linux/amd64/bindings/*
+            - internal/darwin/arm64/bindings/*

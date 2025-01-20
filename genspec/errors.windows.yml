@@ -5,7 +5,8 @@ GENERATOR:
   Includes: [ "quicly_wrapper.h" ]
   FlagGroups:
     - { name: CPPFLAGS, flags: [
-      "-I<basedir>/internal/deps/include/"
+      "-Iinternal/",
+      "-Iinternal/windows/amd64/bindings/include/",
     ] }
 
 PARSER:
@@ -15,9 +16,12 @@ PARSER:
     _WINDOWS: 1
     WIN32_LEAN_AND_MEAN: 1
   IncludePaths: [
-    "<basedir>/internal/deps/include/" ]
+    "internal/",
+    "internal/windows/amd64/bindings/include/",
+  ]
   SourcesPaths: [
     "quicly_wrapper.h",
+    "quicly/constants.h"
   ]
 
 TRANSLATOR:

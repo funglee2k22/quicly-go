@@ -3,7 +3,6 @@ package quiclylib
 import "C"
 import (
 	"bytes"
-	"github.com/Project-Faster/quicly-go/internal/bindings"
 	"github.com/Project-Faster/quicly-go/quiclylib/errors"
 	"github.com/Project-Faster/quicly-go/quiclylib/types"
 	log "github.com/rs/zerolog"
@@ -176,8 +175,8 @@ func (s *QStream) flushToStream() {
 			return
 		}
 		s.Logger.Debug().Msgf("%v quicly write flush: %d", s.session.ID(), buffSize)
-		errcode := bindings.QuiclyWriteStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id),
-			data[:buffSize], bindings.Size_t(buffSize))
+		errcode := QuiclyWriteStream(s.session.ID(), s.id,
+			data[:buffSize], uint64(buffSize))
 
 		if errcode != errors.QUICLY_OK {
 			s.Logger.Error().Msgf("%v quicly errorcode: %d", s.session.ID(), errcode)
@@ -202,7 +201,7 @@ func (s *QStream) Close() error {
 	}
 
 	_ = s.Sync()
-	bindings.QuiclyCloseStream(bindings.Size_t(s.session.ID()), bindings.Size_t(s.id), int32(0))
+	QuiclyCloseStream(s.session.ID(), s.id, int32(0))
 
 	switch conn := s.session.(type) {
 	case *QServerConnection:
