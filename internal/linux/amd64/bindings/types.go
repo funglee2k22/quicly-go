@@ -17,7 +17,7 @@ package bindings
 import "C"
 import "unsafe"
 
-// Size_t type as declared in include/stddef.h:214
+// Size_t type as declared in include/stddef.h:209
 type Size_t uint64
 
 // Iovec as declared in types/struct_iovec.h:26
