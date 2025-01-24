@@ -1,4 +1,4 @@
-module github.com/Project-Faster/quicly-go
+module github.com/funglee2k22/quicly-go
 
 go 1.18
 
